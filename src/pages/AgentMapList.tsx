@@ -69,7 +69,7 @@ const AgentMapList: React.FC = () => {
   const [showAllBureaux, setShowAllBureaux] = useState<boolean>(false)
 
   // Filtre actif/inactif
-  const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('all')
+  const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('active')
 
   // Recherche
   const [search, setSearch] = useState('')

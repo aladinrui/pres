@@ -25,11 +25,12 @@ const BUREAU_NAMES: Record<number, string> = {
 function bureauLabel(id: number) { return BUREAU_NAMES[id] ? `${BUREAU_NAMES[id]} (${id})` : `Bureau ${id}` }
 
 const PROFIL_LABEL: Record<string, string> = {
-  ret:   'R',
-  sup:   'S',
-  man:   'M',
-  cm:    'CM',
-  agent: 'A',
+  ret:         'R',
+  sup:         'S',
+  man:         'M',
+  cm:          'CM',
+  crm_manager: 'CM',
+  agent:       'R',
 }
 function profilLabel(p: string | null | undefined) {
   if (!p) return null
@@ -79,7 +80,8 @@ const STATUS_OPTIONS: { value: UserDay['status']; label: string; color: string }
 // ── Utils ──────────────────────────────────────────────────────────────────
 
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10)
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function formatDateFR(iso: string): string {
@@ -97,7 +99,25 @@ function addDays(iso: string, n: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-// ── Component ──────────────────────────────────────────────────────────────
+function firstCheckin(user: UserDay): string | null {
+  const ins = user.logs.filter((l) => l.type === 'in').sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+  return ins.length > 0 ? ins[0].timestamp : null
+}
+
+function isLate(user: UserDay, threshold: string, date: string): boolean {
+  const ci = firstCheckin(user)
+  if (!ci) return false
+  return new Date(ci) > new Date(`${date}T${threshold}:00`)
+}
+
+/** Retourne le statut enrichi pour un agent */
+function enrichedStatus(user: UserDay, threshold: string, date: string): 'present' | 'present_late' | 'absent' | 'non_pointe' | 'conge' {
+  if (user.status === 'absent') return 'absent'
+  if (user.status === 'conge')  return 'conge'
+  if (isLate(user, threshold, date)) return 'present_late'
+  if (user.last_action === 'in' || user.status === 'present') return 'present'
+  return 'non_pointe'
+}
 
 const ManagerDash: React.FC = () => {
   const dispatch = useAppDispatch()
@@ -134,6 +154,7 @@ const ManagerDash: React.FC = () => {
   const [nomPresenceDraft, setNomPresenceDraft] = useState('')
   const [renaming, setRenaming] = useState(false)
   const [renameError, setRenameError] = useState<string | null>(null)
+  const [threshold, setThreshold] = useState('10:00')
 
   const fetchDay = useCallback(async (date: string) => {
     if (!bureauId) return
@@ -239,9 +260,11 @@ const ManagerDash: React.FC = () => {
   const currentDay: DayEntry | null = data?.days?.[0] ?? null
   const users: UserDay[] = currentDay?.users ?? []
 
-  const presentCount = users.filter((u) => u.last_action === 'in').length
-  const absentCount  = users.filter((u) => u.status === 'absent').length
-  const notChecked   = users.filter((u) => !u.last_action && u.status !== 'absent' && u.status !== 'conge').length
+  const lateCount    = users.filter((u) => enrichedStatus(u, threshold, selectedDate) === 'present_late').length
+  const presentCount = users.filter((u) => ['present', 'present_late'].includes(enrichedStatus(u, threshold, selectedDate))).length
+  const absentCount  = users.filter((u) => enrichedStatus(u, threshold, selectedDate) === 'absent').length
+  const congeCount   = users.filter((u) => enrichedStatus(u, threshold, selectedDate) === 'conge').length
+  const notChecked   = users.filter((u) => enrichedStatus(u, threshold, selectedDate) === 'non_pointe').length
   const isToday      = selectedDate === todayISO()
 
   return (
@@ -257,9 +280,19 @@ const ManagerDash: React.FC = () => {
             <span className="header-username">{username}</span>
             {profil && <span className="header-badge">{profil}</span>}
           </span>
-          <Link to="/" className="btn-manager-link">⏱ Mon pointage</Link>
-          <Link to="/manager" className="btn-manager-link">📅 Bureau</Link>
-          <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
+          {isAdmin ? (
+            <>
+              <Link to="/manager" className="btn-manager-link">📊 Général</Link>
+              <span className="btn-manager-link btn-manager-link--active">📅 Journée</span>
+              <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
+            </>
+          ) : (
+            <>
+              <Link to="/" className="btn-manager-link">⏱ Pointer</Link>
+              <span className="btn-manager-link btn-manager-link--active">📅 Journée</span>
+              <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
+            </>
+          )}
           <button className="btn-logout" onClick={() => dispatch(logout())}>Déconnexion</button>
         </div>
       </header>
@@ -304,6 +337,15 @@ const ManagerDash: React.FC = () => {
               max={todayISO()}
               onChange={(e) => { if (e.target.value) setSelectedDate(e.target.value) }}
             />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#94a3b8' }}>
+              ⏰
+              <input
+                type="time"
+                className="date-picker"
+                value={threshold}
+                onChange={(e) => setThreshold(e.target.value)}
+              />
+            </label>
             <button className="btn-refresh" onClick={() => fetchDay(selectedDate)} disabled={loading}>
               {loading ? '...' : '↻'}
             </button>
@@ -313,20 +355,23 @@ const ManagerDash: React.FC = () => {
         {/* Compteurs */}
         <div className="manager-counters">
           <div className="counter-card counter-present">
-            <span className="counter-num">{presentCount}</span>
+            <span className="counter-num">{presentCount}<span className="counter-num-total">/{users.length}</span></span>
             <span className="counter-label">En service</span>
           </div>
+          <div className="counter-card counter-late">
+            <span className="counter-num">{lateCount}</span>
+            <span className="counter-label">En retard</span>
+          </div>
           <div className="counter-card counter-absent">
-            <span className="counter-num">{absentCount}</span>
-            <span className="counter-label">Absents</span>
+            <span className="counter-num">
+              {absentCount}
+              <span className="counter-num-secondary"> / {congeCount}</span>
+            </span>
+            <span className="counter-label">Absents / Congés</span>
           </div>
           <div className="counter-card counter-waiting">
             <span className="counter-num">{notChecked}</span>
             <span className="counter-label">Non pointés</span>
-          </div>
-          <div className="counter-card counter-total">
-            <span className="counter-num">{users.length}</span>
-            <span className="counter-label">Total agents</span>
           </div>
         </div>
 
@@ -358,14 +403,37 @@ const ManagerDash: React.FC = () => {
                     </div>
 
                     {/* Statut daily */}
-                    <div>
-                      {user.status ? (
-                        <span className={`agent-status-badge as-${user.status}`}>
-                          {STATUS_OPTIONS.find((s) => s.value === user.status)?.label}
-                        </span>
-                      ) : (
-                        <span className="agent-status-badge as-none">—</span>
-                      )}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {(() => {
+                        const es = enrichedStatus(user, threshold, selectedDate)
+                        const isLateAgent = es === 'present_late'
+                        const baseStatus = isLateAgent ? 'present' : es
+                        const cfg: Record<string, { label: string; color: string }> = {
+                          present:    { label: 'Présent',    color: '#22c55e' },
+                          absent:     { label: 'Absent',     color: '#ef4444' },
+                          non_pointe: { label: 'Pas pointé', color: '#6b7280' },
+                          conge:      { label: 'Congé',      color: '#818cf8' },
+                        }
+                        const c = cfg[baseStatus] ?? { label: '—', color: '#6b7280' }
+                        return (
+                          <>
+                            <span
+                              className="alerts-status-badge"
+                              style={{ background: c.color + '22', color: c.color, borderColor: c.color + '55' }}
+                            >
+                              {c.label}
+                            </span>
+                            {isLateAgent && (
+                              <span
+                                className="alerts-status-badge"
+                                style={{ background: '#f59e0b22', color: '#f59e0b', borderColor: '#f59e0b55', fontSize: '0.7rem' }}
+                              >
+                                ⏰ En retard
+                              </span>
+                            )}
+                          </>
+                        )
+                      })()}
                     </div>
 
                     {/* Dernier pointage */}
@@ -399,9 +467,6 @@ const ManagerDash: React.FC = () => {
                     <div className="agent-actions-col">
                       <button className="btn-agent-edit" onClick={() => openEdit(user, selectedDate)}>
                         ✏️ Annoter
-                      </button>
-                      <button className="btn-agent-rename" onClick={() => openRename(user)}>
-                        🏷️ Renommer
                       </button>
                     </div>
                   </div>
@@ -480,40 +545,7 @@ const ManagerDash: React.FC = () => {
           </div>
         </div>
       )}
-      {/* Modal renommage */}
-      {renamingUser && (
-        <div className="modal-overlay" onClick={closeRename}>
-          <div className="modal-box modal-box--sm" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Renommer — <span className="modal-agent-name">{renamingUser.username}</span></h3>
-              <button className="modal-close" onClick={closeRename}>✕</button>
-            </div>
-            <div className="modal-body">
-              <div className="form-group">
-                <label htmlFor="nom-presence">Nom de présence</label>
-                <input
-                  id="nom-presence"
-                  type="text"
-                  className="rename-input"
-                  value={nomPresenceDraft}
-                  onChange={(e) => setNomPresenceDraft(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleRename()}
-                  placeholder="ex: jean.dupont"
-                  maxLength={100}
-                  autoFocus
-                />
-              </div>
-              {renameError && <div className="alert-error" style={{ marginTop: '8px' }}>{renameError}</div>}
-            </div>
-            <div className="modal-footer">
-              <button className="btn-save-note" onClick={handleRename} disabled={renaming || !nomPresenceDraft.trim()}>
-                {renaming ? 'Sauvegarde...' : 'Confirmer'}
-              </button>
-              <button className="btn-cancel-note" onClick={closeRename}>Annuler</button>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   )
 }

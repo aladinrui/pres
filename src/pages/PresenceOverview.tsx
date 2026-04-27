@@ -22,11 +22,12 @@ const BUREAU_NAMES: Record<number, string> = {
 function bureauLabel(id: number) { return BUREAU_NAMES[id] ? `${BUREAU_NAMES[id]} (${id})` : `Bureau ${id}` }
 
 const PROFIL_LABEL: Record<string, string> = {
-  ret:   'R',
-  sup:   'S',
-  man:   'M',
-  cm:    'CM',
-  agent: 'A',
+  ret:         'R',
+  sup:         'S',
+  man:         'M',
+  cm:          'CM',
+  crm_manager: 'CM',
+  agent:       'R',
 }
 function profilLabel(p: string | null | undefined) {
   if (!p) return null
@@ -45,6 +46,7 @@ type UserDay = {
   user_id: number
   username: string
   profil?: string
+  is_active?: number | boolean
   status: 'present' | 'absent' | 'partial' | 'conge' | null
   note: string | null
   daily_id: number | null
@@ -109,7 +111,6 @@ type AlertKind = 'absent' | 'late-status' | 'late-time' | 'ok' | 'conge' | 'not-
 function getAlertKind(user: UserDay, threshold: string, date: string): AlertKind {
   if (user.status === 'conge') return 'conge'
   if (user.status === 'absent') return 'absent'
-  if (user.status === 'partial') return 'late-status'
   if (isLateByTime(user, threshold, date)) return 'late-time'
   if (!user.last_action) return 'not-checked'
   return 'ok'
@@ -148,7 +149,7 @@ const PresenceOverview: React.FC = () => {
   const [data, setData]       = useState<BureauDayResponse | null>(null)
   const [loading, setLoading] = useState(!isAdmin)
   const [error, setError]     = useState<string | null>(null)
-  const [threshold, setThreshold] = useState('09:00')
+  const [threshold, setThreshold] = useState('10:00')
   const [filter, setFilter]   = useState<'all' | 'issues'>('all')
   const isToday = selectedDate === todayISO()
 
@@ -165,7 +166,12 @@ const PresenceOverview: React.FC = () => {
 
   const toggleCardFilter = (bureau_id: number, f: 'non_pointe' | 'absent' | 'retard', e: React.MouseEvent) => {
     e.stopPropagation()
+    // Toggle filtre : si déjà actif → 'all', sinon → nouveau filtre
     setBureauCardFilter(prev => ({ ...prev, [bureau_id]: prev[bureau_id] === f ? 'all' : f }))
+    // Ouvrir la carte si pas déjà ouverte
+    if (expandedBureauId !== bureau_id) {
+      toggleBureau(bureau_id)
+    }
   }
 
   // ── Fetches ─────────────────────────────────────────────────────────────
@@ -211,6 +217,25 @@ const PresenceOverview: React.FC = () => {
       setBureauFullData(prev => ({ ...prev, [bureau_id]: res.data.days?.[0]?.users ?? [] }))
     } catch { /* silently ignore */ } finally { setBureauLoadingId(null) }
   }
+
+  const fetchAllBureauxData = useCallback(async () => {
+    if (!isAdmin) return
+    const results = await Promise.allSettled(
+      BUREAU_IDS_ALL.map(async (bureau_id) => {
+        const res = await axios.post<BureauDayResponse>(`${API}/presence/by-bureau-day`, {
+          bureau_id, date_from: todayISO(), date_to: todayISO(),
+        })
+        return { bureau_id, users: res.data.days?.[0]?.users ?? [] }
+      })
+    )
+    const newData: Record<number, UserDay[]> = {}
+    results.forEach((r) => {
+      if (r.status === 'fulfilled') newData[r.value.bureau_id] = r.value.users
+    })
+    setBureauFullData(newData)
+  }, [isAdmin])
+
+  useEffect(() => { if (isAdmin) fetchAllBureauxData() }, [fetchAllBureauxData])
 
   const goDay = (n: number) => {
     const next = addDays(selectedDate, n)
@@ -267,13 +292,13 @@ const PresenceOverview: React.FC = () => {
           {isAdmin ? (
             <>
               <span className="btn-manager-link btn-manager-link--active">📊 Général</span>
-              <Link to="/manager/annotate" className="btn-manager-link">✏️ Annotations</Link>
+              <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
               <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
             </>
           ) : (
             <>
-              <Link to="/" className="btn-manager-link">⏱ Mon pointage</Link>
-              <Link to="/manager/annotate" className="btn-manager-link">✏️ Annotations</Link>
+              <Link to="/" className="btn-manager-link">⏱ Pointer</Link>
+              <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
               <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
             </>
           )}
@@ -291,9 +316,19 @@ const PresenceOverview: React.FC = () => {
                 <span className="general-section-title">⚠️ Alertes du jour</span>
                 <span className="general-section-date">{formatDateFR(todayISO())}</span>
               </div>
+              <div className="threshold-control">
+                <label htmlFor="threshold-admin">⏰ Seuil</label>
+                <input
+                  id="threshold-admin"
+                  type="time"
+                  className="threshold-input"
+                  value={threshold}
+                  onChange={(e) => setThreshold(e.target.value)}
+                />
+              </div>
               <button
                 className="btn-refresh"
-                onClick={() => { fetchAlerts(); setBureauFullData({}) }}
+                onClick={() => { fetchAlerts(); fetchAllBureauxData() }}
                 disabled={alertsLoading}
               >
                 {alertsLoading ? '...' : '↻'}
@@ -302,21 +337,65 @@ const PresenceOverview: React.FC = () => {
 
             {alertsError && <div className="alert-error">{alertsError}</div>}
 
-            {/* Totaux globaux */}
-            <div className="alerts-counters">
-              <div className="alert-stat alert-stat--non-pointe">
-                <span className="alert-stat-num">{cAlertNonPointe}</span>
-                <span className="alert-stat-label">Pas pointé</span>
+            {/* Chart % en service par bureau */}
+            {Object.keys(bureauFullData).length > 0 && (
+              <div className="bureau-chart-section">
+                <span className="bureau-chart-title">% En service par bureau</span>
+                <div className="bureau-chart-grid">
+                  {BUREAU_IDS_ALL.map((bureau_id) => {
+                    const agents  = (bureauFullData[bureau_id] ?? []).filter((a) => a.is_active !== 0 && a.is_active !== false)
+                    const bAlerts = alertsByBureau[bureau_id] ?? []
+                    const total   = agents.length
+                    if (total === 0) return null
+                    const today = todayISO()
+                    type ES = 'non_pointe' | 'absent' | 'retard' | 'present' | 'conge'
+                    const sm = new Map<number, ES>()
+                    bAlerts.forEach((a) => { if (a.status === 'non_pointe' || a.status === 'absent') sm.set(a.user_id, a.status) })
+                    agents.forEach((ag) => {
+                      if (ag.status === 'conge')                                   { sm.set(ag.user_id, 'conge');     return }
+                      if (sm.get(ag.user_id) === 'absent')                         return
+                      // En service = priorité absolue (peu importe l'heure d'arrivée)
+                      if (ag.last_action === 'in' || ag.status === 'present')      { sm.set(ag.user_id, 'present');   return }
+                      // Retard = a un checkin tardif mais plus en service (sorti)
+                      if (isLateByTime(ag, threshold, today))                      { sm.set(ag.user_id, 'retard');    return }
+                      if (!sm.has(ag.user_id))                                     sm.set(ag.user_id, 'non_pointe')
+                    })
+                    const vals   = [...sm.values()]
+                    const nPres  = vals.filter((s) => s === 'present').length
+                    const nRet   = vals.filter((s) => s === 'retard').length
+                    const nAbs   = vals.filter((s) => s === 'absent').length
+                    const nConge = vals.filter((s) => s === 'conge').length
+                    const nNP    = vals.filter((s) => s === 'non_pointe').length
+                    const pPres  = Math.round(nPres / total * 100)
+                    const bName  = BUREAU_NAMES[bureau_id] ?? `B${bureau_id}`
+                    return (
+                      <div key={bureau_id} className="bureau-chart-row">
+                        <span className="bureau-chart-label">{bName}</span>
+                        <div className="bureau-chart-bar-track">
+                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nPres  / total * 100)}%`, background: '#22c55e' }} />
+                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nRet   / total * 100)}%`, background: '#f59e0b' }} />
+                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nAbs   / total * 100)}%`, background: '#ef4444' }} />
+                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nConge / total * 100)}%`, background: '#818cf8' }} />
+                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nNP    / total * 100)}%`, background: '#374151' }} />
+                        </div>
+                        <span className="bureau-chart-pct">{pPres}%</span>
+                        <span className="bureau-chart-detail">
+                          <span style={{ color: '#4ade80' }}>{nPres}</span>
+                          <span style={{ color: '#6b7280' }}>/{total}</span>
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="bureau-chart-legend">
+                  <span className="bureau-chart-legend-item"><i style={{ background: '#22c55e' }} />Présent</span>
+                  <span className="bureau-chart-legend-item"><i style={{ background: '#f59e0b' }} />Retard</span>
+                  <span className="bureau-chart-legend-item"><i style={{ background: '#ef4444' }} />Absent</span>
+                  <span className="bureau-chart-legend-item"><i style={{ background: '#818cf8' }} />Congé</span>
+                  <span className="bureau-chart-legend-item"><i style={{ background: '#374151' }} />NP</span>
+                </div>
               </div>
-              <div className="alert-stat alert-stat--absent">
-                <span className="alert-stat-num">{cAlertAbsent}</span>
-                <span className="alert-stat-label">Absent</span>
-              </div>
-              <div className="alert-stat alert-stat--retard">
-                <span className="alert-stat-num">{cAlertRetard}</span>
-                <span className="alert-stat-label">Retard</span>
-              </div>
-            </div>
+            )}
 
             {/* Grille de cartes par bureau */}
             {alertsLoading ? (
@@ -326,23 +405,51 @@ const PresenceOverview: React.FC = () => {
                 {BUREAU_IDS_ALL.map((bureau_id) => {
                   const bName      = BUREAU_NAMES[bureau_id] ?? `Bureau ${bureau_id}`
                   const bAlerts    = alertsByBureau[bureau_id] ?? []
-                  // Toujours utiliser l'API alerts pour les compteurs header
-                  const nbNP  = bAlerts.filter((a) => a.status === 'non_pointe').length
-                  const nbAbs = bAlerts.filter((a) => a.status === 'absent').length
-                  const nbRet = bAlerts.filter((a) => a.status === 'retard').length
-                  const hasIssues  = nbNP + nbAbs + nbRet > 0
+                  const rawAgents  = (bureauFullData[bureau_id] ?? []).filter((a) => a.is_active !== 0 && a.is_active !== false)
                   const isExpanded = expandedBureauId === bureau_id
-                  const rawAgents  = bureauFullData[bureau_id] ?? []
                   const isLoadingFull = bureauLoadingId === bureau_id
                   const activeFilter = bureauCardFilter[bureau_id] ?? 'all'
-                  // Filtre basé sur les user_ids des alertes (cohérent avec les compteurs)
-                  const npIds  = new Set(bAlerts.filter((a) => a.status === 'non_pointe').map((a) => a.user_id))
-                  const absIds = new Set(bAlerts.filter((a) => a.status === 'absent').map((a) => a.user_id))
-                  const retIds = new Set(bAlerts.filter((a) => a.status === 'retard').map((a) => a.user_id))
-                  const fullAgents = activeFilter === 'all' ? rawAgents
+
+                  // Compteurs depuis API alerts (source de vérité)
+                  const nbNP  = bAlerts.filter((a) => a.status === 'non_pointe').length
+                  const nbAbs = bAlerts.filter((a) => a.status === 'absent').length
+
+                  // Map user_id → statut enrichi : alerte API prioritaire, puis détection locale complète
+                  type EnrichedStatus = 'non_pointe' | 'absent' | 'retard' | 'present' | 'conge'
+                  const statusMap = new Map<number, EnrichedStatus>()
+
+                  // 1. NP et Absent depuis API (source de vérité pour ces deux)
+                  bAlerts.forEach((a) => {
+                    if (a.status === 'non_pointe' || a.status === 'absent')
+                      statusMap.set(a.user_id, a.status)
+                  })
+
+                  // 2. Enrichissement local — en service = priorité absolue
+                  const today = todayISO()
+                  rawAgents.forEach((ag) => {
+                    if (ag.status === 'conge')                              { statusMap.set(ag.user_id, 'conge');     return }
+                    if (statusMap.get(ag.user_id) === 'absent')            return // absent API conservé
+                    // En service → présent, peu importe l'heure d'arrivée
+                    if (ag.last_action === 'in' || ag.status === 'present') { statusMap.set(ag.user_id, 'present');   return }
+                    // Retard = checkin tardif mais plus en service
+                    if (isLateByTime(ag, threshold, today))                 { statusMap.set(ag.user_id, 'retard');    return }
+                    if (!statusMap.has(ag.user_id))                         statusMap.set(ag.user_id, 'non_pointe')
+                  })
+
+                  const nbRet   = [...statusMap.values()].filter((s) => s === 'retard').length
+                  const nbPres  = [...statusMap.values()].filter((s) => s === 'present').length
+                  const nbConge = [...statusMap.values()].filter((s) => s === 'conge').length
+                  const hasIssues = nbNP + nbAbs + nbRet > 0
+
+                  const npIds   = new Set([...statusMap.entries()].filter(([,s]) => s === 'non_pointe').map(([id]) => id))
+                  const absIds  = new Set([...statusMap.entries()].filter(([,s]) => s === 'absent').map(([id]) => id))
+                  const retIds  = new Set([...statusMap.entries()].filter(([,s]) => s === 'retard').map(([id]) => id))
+
+                  const fullAgents = activeFilter === 'all'        ? rawAgents
                     : activeFilter === 'non_pointe' ? rawAgents.filter((ag) => npIds.has(ag.user_id))
                     : activeFilter === 'absent'     ? rawAgents.filter((ag) => absIds.has(ag.user_id))
-                    : rawAgents.filter((ag) => retIds.has(ag.user_id))
+                    : activeFilter === 'retard'     ? rawAgents.filter((ag) => retIds.has(ag.user_id))
+                    : rawAgents
 
                   return (
                     <div
@@ -353,14 +460,23 @@ const PresenceOverview: React.FC = () => {
                       <div className="bureau-card-header" onClick={() => toggleBureau(bureau_id)}>
                         <div className="bureau-card-title">
                           <span className="bureau-card-name">{bName}</span>
+                          {rawAgents.length > 0 && (
+                            <span className="bureau-card-total">/{rawAgents.length}</span>
+                          )}
                         </div>
                         <div className="bureau-card-stats">
+                          {nbPres > 0 && (
+                            <span className="bstat bstat--pres">
+                              <span className="bstat-num">{nbPres}</span>
+                              <span className="bstat-lbl">Prés</span>
+                            </span>
+                          )}
                           <button
-                            className={`bstat bstat--np${nbNP === 0 ? ' bstat--zero' : ''}${activeFilter === 'non_pointe' ? ' bstat--active' : ''}`}
-                            onClick={(e) => toggleCardFilter(bureau_id, 'non_pointe', e)}
+                            className={`bstat bstat--ret${nbRet === 0 ? ' bstat--zero' : ''}${activeFilter === 'retard' ? ' bstat--active' : ''}`}
+                            onClick={(e) => toggleCardFilter(bureau_id, 'retard', e)}
                           >
-                            <span className="bstat-num">{nbNP}</span>
-                            <span className="bstat-lbl">NP</span>
+                            <span className="bstat-num">{nbRet}</span>
+                            <span className="bstat-lbl">Ret</span>
                           </button>
                           <button
                             className={`bstat bstat--abs${nbAbs === 0 ? ' bstat--zero' : ''}${activeFilter === 'absent' ? ' bstat--active' : ''}`}
@@ -369,12 +485,18 @@ const PresenceOverview: React.FC = () => {
                             <span className="bstat-num">{nbAbs}</span>
                             <span className="bstat-lbl">Abs</span>
                           </button>
+                          {nbConge > 0 && (
+                            <span className="bstat bstat--conge">
+                              <span className="bstat-num">{nbConge}</span>
+                              <span className="bstat-lbl">Cong</span>
+                            </span>
+                          )}
                           <button
-                            className={`bstat bstat--ret${nbRet === 0 ? ' bstat--zero' : ''}${activeFilter === 'retard' ? ' bstat--active' : ''}`}
-                            onClick={(e) => toggleCardFilter(bureau_id, 'retard', e)}
+                            className={`bstat bstat--np${nbNP === 0 ? ' bstat--zero' : ''}${activeFilter === 'non_pointe' ? ' bstat--active' : ''}`}
+                            onClick={(e) => toggleCardFilter(bureau_id, 'non_pointe', e)}
                           >
-                            <span className="bstat-num">{nbRet}</span>
-                            <span className="bstat-lbl">Ret</span>
+                            <span className="bstat-num">{nbNP}</span>
+                            <span className="bstat-lbl">NP</span>
                           </button>
                         </div>
                         <span className="bureau-card-chevron">{isExpanded ? '▲' : '▼'}</span>
@@ -396,14 +518,22 @@ const PresenceOverview: React.FC = () => {
                                 <span>Note</span>
                               </div>
                               {[...fullAgents]
-                                .sort((a, b) =>
-                                  KIND_META[getAlertKind(a, '09:00', todayISO())].priority -
-                                  KIND_META[getAlertKind(b, '09:00', todayISO())].priority
-                                )
+                                .sort((a, b) => {
+                                  const order: Record<string, number> = { absent: 0, retard: 1, conge: 2, non_pointe: 3, present: 4 }
+                                  const sa = statusMap.get(a.user_id) ?? 'present'
+                                  const sb = statusMap.get(b.user_id) ?? 'present'
+                                  return (order[sa] ?? 5) - (order[sb] ?? 5)
+                                })
                                 .map((agent) => {
-                                  const kind = getAlertKind(agent, '09:00', todayISO())
-                                  const meta = KIND_META[kind]
-                                  const ci   = firstCheckin(agent)
+                                  const agStatus = statusMap.get(agent.user_id) ?? 'present'
+                                  const ci = firstCheckin(agent)
+                                  const isLatePresent = agStatus === 'retard' && ci !== null
+                                  const sm: { label: string; color: string } =
+                                    isLatePresent       ? { label: 'Présent / En retard', color: '#f59e0b' } :
+                                    agStatus === 'retard'    ? { label: 'En retard',          color: '#f59e0b' } :
+                                    agStatus === 'absent'    ? { label: 'Absent',              color: '#ef4444' } :
+                                    agStatus === 'non_pointe'? { label: 'Pas pointé',          color: '#6b7280' } :
+                                                               { label: 'Présent',             color: '#22c55e' }
                                   return (
                                     <div key={agent.user_id} className="bureau-full-row">
                                       <div className="agent-info-line">
@@ -415,9 +545,9 @@ const PresenceOverview: React.FC = () => {
                                       <div>
                                         <span
                                           className="alerts-status-badge"
-                                          style={{ background: meta.color + '22', color: meta.color, borderColor: meta.color + '55' }}
+                                          style={{ background: sm.color + '22', color: sm.color, borderColor: sm.color + '55' }}
                                         >
-                                          {meta.label}
+                                          {sm.label}
                                         </span>
                                       </div>
                                       <div>

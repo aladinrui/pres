@@ -244,8 +244,11 @@ const Presence: React.FC = () => {
           </span>
           {['manager', 'admin', 'superadmin'].includes(profil.toLowerCase()) && (
             <>
-              <Link to="/manager" className="btn-manager-link">📅 Bureau</Link>
-              <Link to="/manager/annotate" className="btn-manager-link">✏️ Annotations</Link>
+              {['admin', 'superadmin'].includes(profil.toLowerCase())
+                ? <Link to="/manager" className="btn-manager-link">📊 Général</Link>
+                : <span className="btn-manager-link btn-manager-link--active">⏱ Pointer</span>
+              }
+              <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
               <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
             </>
           )}

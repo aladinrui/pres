@@ -18,13 +18,18 @@ const ManagerRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   </RequireAuth>
 )
 
-/** Redirige les admin/superadmin vers /manager, laisse passer les autres */
+/** Redirige les admin/superadmin vers /manager, laisse passer les autres (pointage perso) */
 const HomeRoute: React.FC = () => {
   const profil = useAppSelector((s) => (s.user.userDetail?.profil as string | undefined) ?? '')
-  if (ADMIN_ROLES.includes(profil)) {
-    return <Navigate to="/manager" replace />
-  }
+  if (ADMIN_ROLES.includes(profil)) return <Navigate to="/manager" replace />
   return <Presence />
+}
+
+/** Redirige les managers (non-admin) depuis /manager vers /manager/day */
+const ManagerHomeRoute: React.FC = () => {
+  const profil = useAppSelector((s) => (s.user.userDetail?.profil as string | undefined) ?? '')
+  if (!ADMIN_ROLES.includes(profil)) return <Navigate to="/manager/day" replace />
+  return <PresenceOverview />
 }
 
 const App: React.FC = () => {
@@ -37,8 +42,8 @@ const App: React.FC = () => {
         <Route path="/" element={<RequireAuth><HomeRoute /></RequireAuth>} />
 
         {/* Manager / Admin uniquement */}
-        <Route path="/manager" element={<ManagerRoute><PresenceOverview /></ManagerRoute>} />
-        <Route path="/manager/annotate" element={<ManagerRoute><ManagerDash /></ManagerRoute>} />
+        <Route path="/manager" element={<ManagerRoute><ManagerHomeRoute /></ManagerRoute>} />
+        <Route path="/manager/day" element={<ManagerRoute><ManagerDash /></ManagerRoute>} />
         <Route path="/manager/agents" element={<ManagerRoute><AgentMapList /></ManagerRoute>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -22,11 +22,12 @@ const BUREAU_IDS = [3, 4, 5, 6, 7, 8, 9, 10]
 function bureauLabel(id: number) { return BUREAU_NAMES[id] ? `${BUREAU_NAMES[id]} (${id})` : `Bureau ${id}` }
 
 const PROFIL_LABEL: Record<string, string> = {
-  ret:   'R',
-  sup:   'S',
-  man:   'M',
-  cm:    'CM',
-  agent: 'A',
+  ret:         'R',
+  sup:         'S',
+  man:         'M',
+  cm:          'CM',
+  crm_manager: 'CM',
+  agent:       'R',
 }
 function profilLabel(p: string | null | undefined) {
   if (!p) return null
@@ -187,7 +188,19 @@ const AgentMapList: React.FC = () => {
             <span className="header-username">{username}</span>
             {profil && <span className="header-badge">{profil}</span>}
           </span>
-          <Link to="/manager" className="btn-manager-link">← Bureau</Link>
+          {isAdmin ? (
+            <>
+              <Link to="/manager" className="btn-manager-link">📊 Général</Link>
+              <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
+              <span className="btn-manager-link btn-manager-link--active">👥 Agents</span>
+            </>
+          ) : (
+            <>
+              <Link to="/" className="btn-manager-link">⏱ Pointer</Link>
+              <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
+              <span className="btn-manager-link btn-manager-link--active">👥 Agents</span>
+            </>
+          )}
           <button className="btn-logout" onClick={() => dispatch(logout())}>Déconnexion</button>
         </div>
       </header>
@@ -303,10 +316,10 @@ const AgentMapList: React.FC = () => {
                       onChange={(e) => handleChangeProfil(agent, e.target.value)}
                     >
                       <option value="">—</option>
-                      <option value="ret">R — ret</option>
-                      <option value="sup">S — sup</option>
-                      <option value="man">M — man</option>
-                      <option value="cm">CM — cm</option>
+                      <option value="ret">R</option>
+                      <option value="sup">S</option>
+                      <option value="man">M</option>
+                      <option value="cm">CM</option>
                     </select>
                     {changingProfilId === agent.user_id && <span className="profil-saving">⋯</span>}
                   </div>

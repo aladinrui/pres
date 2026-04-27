@@ -1,0 +1,603 @@
+import React, { useEffect, useState, useCallback } from 'react'
+import axios from 'axios'
+import { Link } from 'react-router-dom'
+import { useAppDispatch, useAppSelector } from '../store/hooks'
+import { logout } from '../features/auth/authSlice'
+
+const API = ((import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:4000') + '/api'
+
+const MOIS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
+const JOURS = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']
+
+const BUREAU_NAMES: Record<number, string> = {
+  3:  'CRN',
+  4:  'STV',
+  5:  'MRO',
+  6:  'SRG',
+  7:  'YN',
+  8:  'JC',
+  9:  'PAST',
+  10: 'PASC',
+}
+function bureauLabel(id: number) { return BUREAU_NAMES[id] ? `${BUREAU_NAMES[id]} (${id})` : `Bureau ${id}` }
+
+const PROFIL_LABEL: Record<string, string> = {
+  ret:   'R',
+  sup:   'S',
+  man:   'M',
+  cm:    'CM',
+  agent: 'A',
+}
+function profilLabel(p: string | null | undefined) {
+  if (!p) return null
+  return PROFIL_LABEL[p] ?? p
+}
+
+type PresenceLog = {
+  id: number
+  type: 'in' | 'out'
+  timestamp: string
+  note: string | null
+  ip_address: string | null
+}
+
+type UserDay = {
+  user_id: number
+  username: string
+  profil?: string
+  status: 'present' | 'absent' | 'partial' | 'conge' | null
+  note: string | null
+  daily_id: number | null
+  logs: PresenceLog[]
+  last_action: 'in' | 'out' | null
+}
+
+type DayEntry  = { date: string; users: UserDay[] }
+type BureauDayResponse = { bureau_id: number; date_from: string; date_to: string; days: DayEntry[] }
+
+type AlertAgent = {
+  user_id: number
+  username: string
+  bureau_id: number
+  profil: string | null
+  status: 'non_pointe' | 'absent' | 'retard'
+  note: string | null
+  updated_at: string | null
+}
+type AlertsResponse = {
+  date: string
+  bureau_id: number | null
+  total: number
+  agents: AlertAgent[]
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function todayISO() { return new Date().toISOString().slice(0, 10) }
+
+function addDays(iso: string, n: number) {
+  const d = new Date(iso + 'T00:00:00')
+  d.setDate(d.getDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+function formatDateFR(iso: string) {
+  const d = new Date(iso + 'T00:00:00')
+  return `${JOURS[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]} ${d.getFullYear()}`
+}
+
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+}
+
+/** Retourne l'heure du 1er pointage IN, ou null */
+function firstCheckin(user: UserDay): string | null {
+  const ins = user.logs.filter((l) => l.type === 'in').sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+  return ins.length > 0 ? ins[0].timestamp : null
+}
+
+/** true si l'heure de premier IN dépasse le seuil hh:mm */
+function isLateByTime(user: UserDay, threshold: string, date: string): boolean {
+  const ci = firstCheckin(user)
+  if (!ci) return false
+  const limit = new Date(`${date}T${threshold}:00`)
+  return new Date(ci) > limit
+}
+
+type AlertKind = 'absent' | 'late-status' | 'late-time' | 'ok' | 'conge' | 'not-checked'
+
+function getAlertKind(user: UserDay, threshold: string, date: string): AlertKind {
+  if (user.status === 'conge') return 'conge'
+  if (user.status === 'absent') return 'absent'
+  if (user.status === 'partial') return 'late-status'
+  if (isLateByTime(user, threshold, date)) return 'late-time'
+  if (!user.last_action) return 'not-checked'
+  return 'ok'
+}
+
+const KIND_META: Record<AlertKind, { label: string; color: string; priority: number }> = {
+  absent:       { label: 'Absent',        color: '#ef4444', priority: 1 },
+  'late-status':{ label: 'Partiel/Retard',color: '#f59e0b', priority: 2 },
+  'late-time':  { label: 'En retard',     color: '#fb923c', priority: 3 },
+  'not-checked':{ label: 'Pas pointé',    color: '#6b7280', priority: 4 },
+  conge:        { label: 'Congé',         color: '#818cf8', priority: 5 },
+  ok:           { label: 'OK',            color: '#22c55e', priority: 6 },
+}
+
+const ALERT_STATUS: Record<string, { label: string; color: string }> = {
+  non_pointe: { label: 'Pas pointé', color: '#6b7280' },
+  absent:     { label: 'Absent',     color: '#ef4444' },
+  retard:     { label: 'Retard',     color: '#f59e0b' },
+}
+
+// ── Component ──────────────────────────────────────────────────────────────
+
+const PresenceOverview: React.FC = () => {
+  const dispatch = useAppDispatch()
+  const userDetail = useAppSelector((s) => s.user.userDetail)
+
+  const myBureauId = userDetail?.bureau_id ?? (userDetail?.bureaux?.[0] as any)?.id ?? 0
+  const username   = userDetail?.username ?? ''
+  const profil     = (userDetail?.profil as string) ?? ''
+  const isAdmin    = profil === 'admin' || profil === 'superadmin'
+
+  const BUREAU_IDS_ALL = [3, 4, 5, 6, 7, 8, 9, 10]
+
+  // ── Manager view state ──────────────────────────────────────────────────
+  const [selectedDate, setSelectedDate] = useState(todayISO())
+  const [data, setData]       = useState<BureauDayResponse | null>(null)
+  const [loading, setLoading] = useState(!isAdmin)
+  const [error, setError]     = useState<string | null>(null)
+  const [threshold, setThreshold] = useState('09:00')
+  const [filter, setFilter]   = useState<'all' | 'issues'>('all')
+  const isToday = selectedDate === todayISO()
+
+  // ── Alerts state ────────────────────────────────────────────────────────
+  const [alerts, setAlerts]               = useState<AlertsResponse | null>(null)
+  const [alertsLoading, setAlertsLoading] = useState(false)
+  const [alertsError, setAlertsError]     = useState<string | null>(null)
+
+  // ── Admin bureau expansion ──────────────────────────────────────────────
+  const [expandedBureauId, setExpandedBureauId] = useState<number | null>(null)
+  const [bureauFullData, setBureauFullData]     = useState<Record<number, UserDay[]>>({})
+  const [bureauLoadingId, setBureauLoadingId]   = useState<number | null>(null)
+  const [bureauCardFilter, setBureauCardFilter] = useState<Record<number, 'all' | 'non_pointe' | 'absent' | 'retard'>>({})
+
+  const toggleCardFilter = (bureau_id: number, f: 'non_pointe' | 'absent' | 'retard', e: React.MouseEvent) => {
+    e.stopPropagation()
+    setBureauCardFilter(prev => ({ ...prev, [bureau_id]: prev[bureau_id] === f ? 'all' : f }))
+  }
+
+  // ── Fetches ─────────────────────────────────────────────────────────────
+  const fetchDay = useCallback(async (date: string) => {
+    if (!myBureauId) return
+    try {
+      setLoading(true); setError(null)
+      const res = await axios.post<BureauDayResponse>(`${API}/presence/by-bureau-day`, {
+        bureau_id: myBureauId, date_from: date, date_to: date,
+      })
+      setData(res.data)
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Erreur lors du chargement')
+    } finally { setLoading(false) }
+  }, [myBureauId])
+
+  useEffect(() => { if (!isAdmin) fetchDay(selectedDate) }, [fetchDay, selectedDate, isAdmin])
+
+  const fetchAlerts = useCallback(async () => {
+    setAlertsLoading(true); setAlertsError(null)
+    try {
+      const url = isAdmin
+        ? `${API}/presence/today/alerts`
+        : `${API}/presence/today/alerts?bureau_id=${myBureauId}`
+      const res = await axios.get<AlertsResponse>(url)
+      setAlerts(res.data)
+    } catch (err: any) {
+      setAlertsError(err?.response?.data?.message || 'Erreur')
+    } finally { setAlertsLoading(false) }
+  }, [isAdmin, myBureauId])
+
+  useEffect(() => { fetchAlerts() }, [fetchAlerts])
+
+  const toggleBureau = async (bureau_id: number) => {
+    if (expandedBureauId === bureau_id) { setExpandedBureauId(null); return }
+    setExpandedBureauId(bureau_id)
+    if (bureauFullData[bureau_id]) return
+    setBureauLoadingId(bureau_id)
+    try {
+      const res = await axios.post<BureauDayResponse>(`${API}/presence/by-bureau-day`, {
+        bureau_id, date_from: todayISO(), date_to: todayISO(),
+      })
+      setBureauFullData(prev => ({ ...prev, [bureau_id]: res.data.days?.[0]?.users ?? [] }))
+    } catch { /* silently ignore */ } finally { setBureauLoadingId(null) }
+  }
+
+  const goDay = (n: number) => {
+    const next = addDays(selectedDate, n)
+    if (next > todayISO()) return
+    setSelectedDate(next)
+  }
+
+  // ── Manager computed ────────────────────────────────────────────────────
+  const users: UserDay[] = data?.days?.[0]?.users ?? []
+  const sorted = [...users].sort((a, b) =>
+    KIND_META[getAlertKind(a, threshold, selectedDate)].priority -
+    KIND_META[getAlertKind(b, threshold, selectedDate)].priority
+  )
+  const displayed = filter === 'issues'
+    ? sorted.filter((u) => { const k = getAlertKind(u, threshold, selectedDate); return k !== 'ok' && k !== 'conge' })
+    : sorted
+  const cAbsent  = users.filter((u) => getAlertKind(u, threshold, selectedDate) === 'absent').length
+  const cLate    = users.filter((u) => ['late-status','late-time'].includes(getAlertKind(u, threshold, selectedDate))).length
+  const cOk      = users.filter((u) => getAlertKind(u, threshold, selectedDate) === 'ok').length
+  const cNoCheck = users.filter((u) => getAlertKind(u, threshold, selectedDate) === 'not-checked').length
+
+  // ── Alerts computed ─────────────────────────────────────────────────────
+  const alertAgents     = alerts?.agents ?? []
+  const cAlertNonPointe = alertAgents.filter((a) => a.status === 'non_pointe').length
+  const cAlertAbsent    = alertAgents.filter((a) => a.status === 'absent').length
+  const cAlertRetard    = alertAgents.filter((a) => a.status === 'retard').length
+  const alertsByBureau  = alertAgents.reduce<Record<number, AlertAgent[]>>((acc, a) => {
+    if (!acc[a.bureau_id]) acc[a.bureau_id] = []
+    acc[a.bureau_id].push(a)
+    return acc
+  }, {})
+  const bureauGroups = Object.entries(
+    alertAgents.reduce<Record<number, AlertAgent[]>>((acc, a) => {
+      if (!acc[a.bureau_id]) acc[a.bureau_id] = []
+      acc[a.bureau_id].push(a)
+      return acc
+    }, {})
+  ).map(([id, agents]) => ({ bureau_id: Number(id), agents })).sort((a, b) => a.bureau_id - b.bureau_id)
+
+  return (
+    <div className="presence-page">
+
+      {/* ── Header ──────────────────────────────────────────────────────── */}
+      <header className="presence-header">
+        <div className="header-left">
+          <span className="header-logo">{isAdmin ? '📊' : '👁'}</span>
+          <span className="header-title">{isAdmin ? 'Général' : "Vue d'ensemble"}</span>
+        </div>
+        <div className="header-right">
+          <span className="header-user">
+            <span className="header-username">{username}</span>
+            {profil && <span className="header-badge">{profil}</span>}
+          </span>
+          {isAdmin ? (
+            <>
+              <span className="btn-manager-link btn-manager-link--active">📊 Général</span>
+              <Link to="/manager/annotate" className="btn-manager-link">✏️ Annotations</Link>
+              <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
+            </>
+          ) : (
+            <>
+              <Link to="/" className="btn-manager-link">⏱ Mon pointage</Link>
+              <Link to="/manager/annotate" className="btn-manager-link">✏️ Annotations</Link>
+              <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
+            </>
+          )}
+          <button className="btn-logout" onClick={() => dispatch(logout())}>Déconnexion</button>
+        </div>
+      </header>
+
+      <div className="manager-layout">
+
+        {/* ════════ VUE ADMIN — Général ════════════════════════════════════ */}
+        {isAdmin && (
+          <>
+            <div className="general-section-header">
+              <div>
+                <span className="general-section-title">⚠️ Alertes du jour</span>
+                <span className="general-section-date">{formatDateFR(todayISO())}</span>
+              </div>
+              <button
+                className="btn-refresh"
+                onClick={() => { fetchAlerts(); setBureauFullData({}) }}
+                disabled={alertsLoading}
+              >
+                {alertsLoading ? '...' : '↻'}
+              </button>
+            </div>
+
+            {alertsError && <div className="alert-error">{alertsError}</div>}
+
+            {/* Totaux globaux */}
+            <div className="alerts-counters">
+              <div className="alert-stat alert-stat--non-pointe">
+                <span className="alert-stat-num">{cAlertNonPointe}</span>
+                <span className="alert-stat-label">Pas pointé</span>
+              </div>
+              <div className="alert-stat alert-stat--absent">
+                <span className="alert-stat-num">{cAlertAbsent}</span>
+                <span className="alert-stat-label">Absent</span>
+              </div>
+              <div className="alert-stat alert-stat--retard">
+                <span className="alert-stat-num">{cAlertRetard}</span>
+                <span className="alert-stat-label">Retard</span>
+              </div>
+            </div>
+
+            {/* Grille de cartes par bureau */}
+            {alertsLoading ? (
+              <div className="loading-state">Chargement...</div>
+            ) : (
+              <div className="bureaux-cards-grid">
+                {BUREAU_IDS_ALL.map((bureau_id) => {
+                  const bName      = BUREAU_NAMES[bureau_id] ?? `Bureau ${bureau_id}`
+                  const bAlerts    = alertsByBureau[bureau_id] ?? []
+                  // Toujours utiliser l'API alerts pour les compteurs header
+                  const nbNP  = bAlerts.filter((a) => a.status === 'non_pointe').length
+                  const nbAbs = bAlerts.filter((a) => a.status === 'absent').length
+                  const nbRet = bAlerts.filter((a) => a.status === 'retard').length
+                  const hasIssues  = nbNP + nbAbs + nbRet > 0
+                  const isExpanded = expandedBureauId === bureau_id
+                  const rawAgents  = bureauFullData[bureau_id] ?? []
+                  const isLoadingFull = bureauLoadingId === bureau_id
+                  const activeFilter = bureauCardFilter[bureau_id] ?? 'all'
+                  // Filtre basé sur les user_ids des alertes (cohérent avec les compteurs)
+                  const npIds  = new Set(bAlerts.filter((a) => a.status === 'non_pointe').map((a) => a.user_id))
+                  const absIds = new Set(bAlerts.filter((a) => a.status === 'absent').map((a) => a.user_id))
+                  const retIds = new Set(bAlerts.filter((a) => a.status === 'retard').map((a) => a.user_id))
+                  const fullAgents = activeFilter === 'all' ? rawAgents
+                    : activeFilter === 'non_pointe' ? rawAgents.filter((ag) => npIds.has(ag.user_id))
+                    : activeFilter === 'absent'     ? rawAgents.filter((ag) => absIds.has(ag.user_id))
+                    : rawAgents.filter((ag) => retIds.has(ag.user_id))
+                  const isLoadingFull = bureauLoadingId === bureau_id
+                  const activeFilter = bureauCardFilter[bureau_id] ?? 'all'
+                  const fullAgents = activeFilter === 'all' ? rawAgents : rawAgents.filter((ag) => {
+                    const k = getAlertKind(ag, '09:00', todayISO())
+                    if (activeFilter === 'non_pointe') return k === 'not-checked'
+                    if (activeFilter === 'absent')     return k === 'absent'
+                    if (activeFilter === 'retard')     return k === 'late-time' || k === 'late-status'
+                    return true
+                  })
+
+                  return (
+                    <div
+                      key={bureau_id}
+                      className={`bureau-card${isExpanded ? ' bureau-card--expanded' : ''}${hasIssues ? ' bureau-card--issues' : ''}`}
+                    >
+                      {/* En-tête cliquable */}
+                      <div className="bureau-card-header" onClick={() => toggleBureau(bureau_id)}>
+                        <div className="bureau-card-title">
+                          <span className="bureau-card-name">{bName}</span>
+                          <span className="bureau-card-id">#{bureau_id}</span>
+                        </div>
+                        <div className="bureau-card-stats">
+                          <button
+                            className={`bstat bstat--np${nbNP === 0 ? ' bstat--zero' : ''}${activeFilter === 'non_pointe' ? ' bstat--active' : ''}`}
+                            onClick={(e) => toggleCardFilter(bureau_id, 'non_pointe', e)}
+                          >
+                            <span className="bstat-num">{nbNP}</span>
+                            <span className="bstat-lbl">NP</span>
+                          </button>
+                          <button
+                            className={`bstat bstat--abs${nbAbs === 0 ? ' bstat--zero' : ''}${activeFilter === 'absent' ? ' bstat--active' : ''}`}
+                            onClick={(e) => toggleCardFilter(bureau_id, 'absent', e)}
+                          >
+                            <span className="bstat-num">{nbAbs}</span>
+                            <span className="bstat-lbl">Abs</span>
+                          </button>
+                          <button
+                            className={`bstat bstat--ret${nbRet === 0 ? ' bstat--zero' : ''}${activeFilter === 'retard' ? ' bstat--active' : ''}`}
+                            onClick={(e) => toggleCardFilter(bureau_id, 'retard', e)}
+                          >
+                            <span className="bstat-num">{nbRet}</span>
+                            <span className="bstat-lbl">Ret</span>
+                          </button>
+                        </div>
+                        <span className="bureau-card-chevron">{isExpanded ? '▲' : '▼'}</span>
+                      </div>
+
+                      {/* Liste complète expandée */}
+                      {isExpanded && (
+                        <div className="bureau-card-body">
+                          {isLoadingFull ? (
+                            <div className="loading-state" style={{ padding: '0.75rem' }}>Chargement...</div>
+                          ) : fullAgents.length === 0 ? (
+                            <div className="agents-empty" style={{ padding: '0.75rem' }}>Aucun agent</div>
+                          ) : (
+                            <div className="bureau-full-table">
+                              <div className="bureau-full-head">
+                                <span>Agent</span>
+                                <span>Statut</span>
+                                <span>Heure</span>
+                                <span>Note</span>
+                              </div>
+                              {[...fullAgents]
+                                .sort((a, b) =>
+                                  KIND_META[getAlertKind(a, '09:00', todayISO())].priority -
+                                  KIND_META[getAlertKind(b, '09:00', todayISO())].priority
+                                )
+                                .map((agent) => {
+                                  const kind = getAlertKind(agent, '09:00', todayISO())
+                                  const meta = KIND_META[kind]
+                                  const ci   = firstCheckin(agent)
+                                  return (
+                                    <div key={agent.user_id} className="bureau-full-row">
+                                      <div className="agent-info-line">
+                                        <span className="agent-name">{agent.username}</span>
+                                        {agent.profil && (
+                                          <span className={`profil-tag profil-tag--${agent.profil}`}>{profilLabel(agent.profil)}</span>
+                                        )}
+                                      </div>
+                                      <div>
+                                        <span
+                                          className="alerts-status-badge"
+                                          style={{ background: meta.color + '22', color: meta.color, borderColor: meta.color + '55' }}
+                                        >
+                                          {meta.label}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        {ci
+                                          ? <span className="alerts-time">▶ {formatTime(ci)}</span>
+                                          : <span className="note-preview-empty">—</span>}
+                                      </div>
+                                      <div>
+                                        {agent.note
+                                          ? <span className="alerts-note-text">{agent.note}</span>
+                                          : <span className="note-preview-empty">—</span>}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ════════ VUE MANAGER — Bureau ═══════════════════════════════════ */}
+        {!isAdmin && (
+          <>
+            {/* Toolbar */}
+            <div className="overview-toolbar">
+              <div className="date-nav">
+                <button className="date-nav-btn" onClick={() => goDay(-1)}>‹</button>
+                <div className="date-nav-center">
+                  <span className="date-nav-label">{formatDateFR(selectedDate)}</span>
+                  {!isToday && (
+                    <button className="date-nav-today" onClick={() => setSelectedDate(todayISO())}>Aujourd'hui</button>
+                  )}
+                </div>
+                <button className="date-nav-btn" onClick={() => goDay(1)} disabled={isToday}>›</button>
+              </div>
+              <div className="threshold-control">
+                <label htmlFor="threshold">⏰ Seuil retard</label>
+                <input id="threshold" type="time" className="threshold-input" value={threshold} onChange={(e) => setThreshold(e.target.value)} />
+              </div>
+              <div className="agent-map-filters">
+                <button className={`filter-btn ${filter === 'all' ? 'filter-btn--active' : ''}`} onClick={() => setFilter('all')}>Tous ({users.length})</button>
+                <button className={`filter-btn ${filter === 'issues' ? 'filter-btn--active' : ''}`} onClick={() => setFilter('issues')}>⚠ Problèmes ({cAbsent + cLate + cNoCheck})</button>
+              </div>
+              <button className="btn-refresh" onClick={() => fetchDay(selectedDate)} disabled={loading}>{loading ? '...' : '↻'}</button>
+            </div>
+
+            {/* Alertes du jour (manager) */}
+            <div className="alerts-section">
+              <div className="alerts-section-header">
+                <span className="alerts-section-title">⚠️ Alertes du jour</span>
+                <span className="alerts-section-date">{formatDateFR(todayISO())}</span>
+                <button className="btn-refresh" onClick={fetchAlerts} disabled={alertsLoading}>{alertsLoading ? '...' : '↻'}</button>
+              </div>
+              {alertsError && <div className="alert-error">{alertsError}</div>}
+              <div className="alerts-counters">
+                <div className="alert-stat alert-stat--non-pointe"><span className="alert-stat-num">{cAlertNonPointe}</span><span className="alert-stat-label">Pas pointé</span></div>
+                <div className="alert-stat alert-stat--absent"><span className="alert-stat-num">{cAlertAbsent}</span><span className="alert-stat-label">Absent</span></div>
+                <div className="alert-stat alert-stat--retard"><span className="alert-stat-num">{cAlertRetard}</span><span className="alert-stat-label">Retard</span></div>
+              </div>
+              {alertsLoading ? (
+                <div className="loading-state">Chargement...</div>
+              ) : bureauGroups.length === 0 ? (
+                <div className="alerts-empty">✅ Aucune alerte pour aujourd'hui</div>
+              ) : (
+                <div className="alerts-bureaux">
+                  {bureauGroups.map(({ bureau_id, agents }) => {
+                    const bName = BUREAU_NAMES[bureau_id] ?? `Bureau ${bureau_id}`
+                    const nbNP  = agents.filter((a) => a.status === 'non_pointe').length
+                    const nbAbs = agents.filter((a) => a.status === 'absent').length
+                    const nbRet = agents.filter((a) => a.status === 'retard').length
+                    const sortedAgents = [...agents].sort((a, b) => {
+                      const order: Record<string, number> = { absent: 0, retard: 1, non_pointe: 2 }
+                      return (order[a.status] ?? 3) - (order[b.status] ?? 3)
+                    })
+                    return (
+                      <div key={bureau_id} className="alerts-bureau-block">
+                        <div className="alerts-bureau-header">
+                          <span className="alerts-bureau-name">{bName}</span>
+                          <div className="alerts-bureau-mini-stats">
+                            {nbAbs > 0 && <span className="alerts-mini-stat alerts-mini-stat--absent">{nbAbs} absent{nbAbs > 1 ? 's' : ''}</span>}
+                            {nbRet > 0 && <span className="alerts-mini-stat alerts-mini-stat--retard">{nbRet} retard{nbRet > 1 ? 's' : ''}</span>}
+                            {nbNP  > 0 && <span className="alerts-mini-stat alerts-mini-stat--np">{nbNP} pas pointé{nbNP > 1 ? 's' : ''}</span>}
+                          </div>
+                        </div>
+                        <div className="alerts-table">
+                          <div className="alerts-table-head"><span>Agent</span><span>Statut</span><span>Note</span><span>Heure</span></div>
+                          {sortedAgents.map((agent) => {
+                            const sm = ALERT_STATUS[agent.status] ?? { label: agent.status, color: '#6b7280' }
+                            return (
+                              <div key={agent.user_id} className="alerts-table-row">
+                                <div className="agent-info-line">
+                                  <span className="agent-name">{agent.username}</span>
+                                  {agent.profil && <span className={`profil-tag profil-tag--${agent.profil}`}>{profilLabel(agent.profil)}</span>}
+                                </div>
+                                <div><span className="alerts-status-badge" style={{ background: sm.color + '22', color: sm.color, borderColor: sm.color + '55' }}>{sm.label}</span></div>
+                                <div>{agent.note ? <span className="alerts-note-text">{agent.note}</span> : <span className="note-preview-empty">—</span>}</div>
+                                <div>{agent.updated_at ? <span className="alerts-time">{formatTime(agent.updated_at)}</span> : <span className="note-preview-empty">—</span>}</div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Compteurs */}
+            <div className="manager-counters">
+              <div className="counter-card counter-present"><span className="counter-num">{cOk}</span><span className="counter-label">À l'heure</span></div>
+              <div className="counter-card" style={{ borderTop: '3px solid #fb923c' }}><span className="counter-num" style={{ color: '#fb923c' }}>{cLate}</span><span className="counter-label">En retard</span></div>
+              <div className="counter-card counter-absent"><span className="counter-num">{cAbsent}</span><span className="counter-label">Absents</span></div>
+              <div className="counter-card counter-waiting"><span className="counter-num">{cNoCheck}</span><span className="counter-label">Pas pointé</span></div>
+            </div>
+
+            {error && <div className="alert-error">{error}</div>}
+
+            {loading ? (
+              <div className="loading-state">Chargement...</div>
+            ) : displayed.length === 0 ? (
+              <div className="agents-empty">Aucun agent à afficher</div>
+            ) : (
+              <div className="overview-grid">
+                {displayed.map((user) => {
+                  const kind = getAlertKind(user, threshold, selectedDate)
+                  const meta = KIND_META[kind]
+                  const ci   = firstCheckin(user)
+                  const isIssue = kind === 'absent' || kind === 'late-status' || kind === 'late-time'
+                  return (
+                    <div key={user.user_id} className={`overview-card ${isIssue ? 'overview-card--issue' : ''}`} style={{ '--card-color': meta.color } as React.CSSProperties}>
+                      <div className="overview-card-bar" />
+                      <div className="overview-card-body">
+                        <div className="overview-card-top">
+                          <div>
+                            <span className="overview-agent-name">{user.username}</span>
+                            {user.profil && <span className="agent-profil">{profilLabel(user.profil)}</span>}
+                          </div>
+                          <span className="overview-status-badge" style={{ background: meta.color + '22', color: meta.color, borderColor: meta.color + '55' }}>{meta.label}</span>
+                        </div>
+                        <div className="overview-card-mid">
+                          {ci
+                            ? <span className={`overview-checkin-time ${kind === 'late-time' ? 'overview-checkin-late' : ''}`}>▶ {formatTime(ci)}{kind === 'late-time' && <span className="late-flag">RETARD</span>}</span>
+                            : <span className="overview-no-checkin">Aucun pointage</span>}
+                        </div>
+                        {(user.note || isIssue) && (
+                          <div className="overview-note">
+                            {user.note
+                              ? <><span className="overview-note-icon">📌</span><span className="overview-note-text">{user.note}</span></>
+                              : <span className="overview-note-empty">Aucune note</span>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default PresenceOverview

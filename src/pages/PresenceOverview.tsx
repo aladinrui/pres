@@ -343,15 +343,6 @@ const PresenceOverview: React.FC = () => {
                     : activeFilter === 'non_pointe' ? rawAgents.filter((ag) => npIds.has(ag.user_id))
                     : activeFilter === 'absent'     ? rawAgents.filter((ag) => absIds.has(ag.user_id))
                     : rawAgents.filter((ag) => retIds.has(ag.user_id))
-                  const isLoadingFull = bureauLoadingId === bureau_id
-                  const activeFilter = bureauCardFilter[bureau_id] ?? 'all'
-                  const fullAgents = activeFilter === 'all' ? rawAgents : rawAgents.filter((ag) => {
-                    const k = getAlertKind(ag, '09:00', todayISO())
-                    if (activeFilter === 'non_pointe') return k === 'not-checked'
-                    if (activeFilter === 'absent')     return k === 'absent'
-                    if (activeFilter === 'retard')     return k === 'late-time' || k === 'late-status'
-                    return true
-                  })
 
                   return (
                     <div
@@ -362,7 +353,6 @@ const PresenceOverview: React.FC = () => {
                       <div className="bureau-card-header" onClick={() => toggleBureau(bureau_id)}>
                         <div className="bureau-card-title">
                           <span className="bureau-card-name">{bName}</span>
-                          <span className="bureau-card-id">#{bureau_id}</span>
                         </div>
                         <div className="bureau-card-stats">
                           <button

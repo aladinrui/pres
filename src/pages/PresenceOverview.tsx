@@ -1,10 +1,15 @@
-import React, { useEffect, useState, useCallback } from 'react'
-import axios from 'axios'
+import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logout } from '../features/auth/authSlice'
-
-const API = ((import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:4000') + '/api'
+import {
+  fetchBureauDay,
+  fetchAlerts,
+  fetchAllBureauxData,
+  setSelectedDate,
+  setThreshold,
+  type UserDay,
+} from '../features/presence/presenceSlice'
 
 const MOIS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
 const JOURS = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']
@@ -34,44 +39,6 @@ function profilLabel(p: string | null | undefined) {
   return PROFIL_LABEL[p] ?? p
 }
 
-type PresenceLog = {
-  id: number
-  type: 'in' | 'out'
-  timestamp: string
-  note: string | null
-  ip_address: string | null
-}
-
-type UserDay = {
-  user_id: number
-  username: string
-  profil?: string
-  is_active?: number | boolean
-  status: 'present' | 'absent' | 'partial' | 'conge' | null
-  note: string | null
-  daily_id: number | null
-  logs: PresenceLog[]
-  last_action: 'in' | 'out' | null
-}
-
-type DayEntry  = { date: string; users: UserDay[] }
-type BureauDayResponse = { bureau_id: number; date_from: string; date_to: string; days: DayEntry[] }
-
-type AlertAgent = {
-  user_id: number
-  username: string
-  bureau_id: number
-  profil: string | null
-  status: 'non_pointe' | 'absent' | 'retard'
-  note: string | null
-  updated_at: string | null
-}
-type AlertsResponse = {
-  date: string
-  bureau_id: number | null
-  total: number
-  agents: AlertAgent[]
-}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -137,114 +104,65 @@ const PresenceOverview: React.FC = () => {
   const dispatch = useAppDispatch()
   const userDetail = useAppSelector((s) => s.user.userDetail)
 
-  const myBureauId = userDetail?.bureau_id ?? (userDetail?.bureaux?.[0] as any)?.id ?? 0
-  const username   = userDetail?.username ?? ''
-  const profil     = (userDetail?.profil as string) ?? ''
-  const isAdmin    = profil === 'admin' || profil === 'superadmin'
+  const username  = userDetail?.username ?? ''
+  const profil    = (userDetail?.profil as string) ?? ''
+  const isAdmin   = profil === 'admin' || profil === 'superadmin'
 
   const BUREAU_IDS_ALL = [3, 4, 5, 6, 7, 8, 9, 10]
 
-  // ── Manager view state ──────────────────────────────────────────────────
-  const [selectedDate, setSelectedDate] = useState(todayISO())
-  const [data, setData]       = useState<BureauDayResponse | null>(null)
-  const [loading, setLoading] = useState(!isAdmin)
-  const [error, setError]     = useState<string | null>(null)
-  const [threshold, setThreshold] = useState('10:00')
-  const [filter, setFilter]   = useState<'all' | 'issues'>('all')
+  // ── Redux state ─────────────────────────────────────────────────────────
+  const {
+    bureauDay,
+    bureauDayLoading,
+    bureauDayError,
+    alerts,
+    alertsLoading,
+    alertsError,
+    allBureauxData,
+    selectedDate,
+    threshold,
+  } = useAppSelector((s) => s.presence)
+
   const isToday = selectedDate === todayISO()
 
-  // ── Alerts state ────────────────────────────────────────────────────────
-  const [alerts, setAlerts]               = useState<AlertsResponse | null>(null)
-  const [alertsLoading, setAlertsLoading] = useState(false)
-  const [alertsError, setAlertsError]     = useState<string | null>(null)
-
-  // ── Admin bureau expansion ──────────────────────────────────────────────
-  const [expandedBureauId, setExpandedBureauId] = useState<number | null>(null)
-  const [bureauFullData, setBureauFullData]     = useState<Record<number, UserDay[]>>({})
-  const [bureauLoadingId, setBureauLoadingId]   = useState<number | null>(null)
-  const [bureauCardFilter, setBureauCardFilter] = useState<Record<number, 'all' | 'non_pointe' | 'absent' | 'retard'>>({})
+  // ── Local UI-only state ──────────────────────────────────────────────────
+  const [filter, setFilter]   = useState<'all' | 'issues'>('all')
+  const [expandedBureauId, setExpandedBureauId]     = useState<number | null>(null)
+  const [bureauLoadingId, setBureauLoadingId]       = useState<number | null>(null)
+  const [bureauCardFilter, setBureauCardFilter]     = useState<Record<number, 'all' | 'non_pointe' | 'absent' | 'retard'>>({})
 
   const toggleCardFilter = (bureau_id: number, f: 'non_pointe' | 'absent' | 'retard', e: React.MouseEvent) => {
     e.stopPropagation()
-    // Toggle filtre : si déjà actif → 'all', sinon → nouveau filtre
     setBureauCardFilter(prev => ({ ...prev, [bureau_id]: prev[bureau_id] === f ? 'all' : f }))
-    // Ouvrir la carte si pas déjà ouverte
-    if (expandedBureauId !== bureau_id) {
-      toggleBureau(bureau_id)
-    }
+    if (expandedBureauId !== bureau_id) toggleBureau(bureau_id)
   }
 
-  // ── Fetches ─────────────────────────────────────────────────────────────
-  const fetchDay = useCallback(async (date: string) => {
-    if (!myBureauId) return
-    try {
-      setLoading(true); setError(null)
-      const res = await axios.post<BureauDayResponse>(`${API}/presence/by-bureau-day`, {
-        bureau_id: myBureauId, date_from: date, date_to: date,
-      })
-      setData(res.data)
-    } catch (err: any) {
-      setError(err?.response?.data?.message || 'Erreur lors du chargement')
-    } finally { setLoading(false) }
-  }, [myBureauId])
+  // ── Effects ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isAdmin) dispatch(fetchBureauDay(selectedDate))
+  }, [dispatch, selectedDate, isAdmin])
 
-  useEffect(() => { if (!isAdmin) fetchDay(selectedDate) }, [fetchDay, selectedDate, isAdmin])
+  useEffect(() => {
+    dispatch(fetchAlerts())
+  }, [dispatch])
 
-  const fetchAlerts = useCallback(async () => {
-    setAlertsLoading(true); setAlertsError(null)
-    try {
-      const url = isAdmin
-        ? `${API}/presence/today/alerts`
-        : `${API}/presence/today/alerts?bureau_id=${myBureauId}`
-      const res = await axios.get<AlertsResponse>(url)
-      setAlerts(res.data)
-    } catch (err: any) {
-      setAlertsError(err?.response?.data?.message || 'Erreur')
-    } finally { setAlertsLoading(false) }
-  }, [isAdmin, myBureauId])
+  useEffect(() => {
+    if (isAdmin) dispatch(fetchAllBureauxData())
+  }, [dispatch, isAdmin])
 
-  useEffect(() => { fetchAlerts() }, [fetchAlerts])
-
-  const toggleBureau = async (bureau_id: number) => {
+  const toggleBureau = (bureau_id: number) => {
     if (expandedBureauId === bureau_id) { setExpandedBureauId(null); return }
     setExpandedBureauId(bureau_id)
-    if (bureauFullData[bureau_id]) return
-    setBureauLoadingId(bureau_id)
-    try {
-      const res = await axios.post<BureauDayResponse>(`${API}/presence/by-bureau-day`, {
-        bureau_id, date_from: todayISO(), date_to: todayISO(),
-      })
-      setBureauFullData(prev => ({ ...prev, [bureau_id]: res.data.days?.[0]?.users ?? [] }))
-    } catch { /* silently ignore */ } finally { setBureauLoadingId(null) }
   }
-
-  const fetchAllBureauxData = useCallback(async () => {
-    if (!isAdmin) return
-    const results = await Promise.allSettled(
-      BUREAU_IDS_ALL.map(async (bureau_id) => {
-        const res = await axios.post<BureauDayResponse>(`${API}/presence/by-bureau-day`, {
-          bureau_id, date_from: todayISO(), date_to: todayISO(),
-        })
-        return { bureau_id, users: res.data.days?.[0]?.users ?? [] }
-      })
-    )
-    const newData: Record<number, UserDay[]> = {}
-    results.forEach((r) => {
-      if (r.status === 'fulfilled') newData[r.value.bureau_id] = r.value.users
-    })
-    setBureauFullData(newData)
-  }, [isAdmin])
-
-  useEffect(() => { if (isAdmin) fetchAllBureauxData() }, [fetchAllBureauxData])
 
   const goDay = (n: number) => {
     const next = addDays(selectedDate, n)
     if (next > todayISO()) return
-    setSelectedDate(next)
+    dispatch(setSelectedDate(next))
   }
 
   // ── Manager computed ────────────────────────────────────────────────────
-  const users: UserDay[] = data?.days?.[0]?.users ?? []
+  const users: UserDay[] = bureauDay?.days?.[0]?.users ?? []
   const sorted = [...users].sort((a, b) =>
     KIND_META[getAlertKind(a, threshold, selectedDate)].priority -
     KIND_META[getAlertKind(b, threshold, selectedDate)].priority
@@ -262,13 +180,13 @@ const PresenceOverview: React.FC = () => {
   const cAlertNonPointe = alertAgents.filter((a) => a.status === 'non_pointe').length
   const cAlertAbsent    = alertAgents.filter((a) => a.status === 'absent').length
   const cAlertRetard    = alertAgents.filter((a) => a.status === 'retard').length
-  const alertsByBureau  = alertAgents.reduce<Record<number, AlertAgent[]>>((acc, a) => {
+  const alertsByBureau  = alertAgents.reduce<Record<number, typeof alertAgents>>((acc, a) => {
     if (!acc[a.bureau_id]) acc[a.bureau_id] = []
     acc[a.bureau_id].push(a)
     return acc
   }, {})
   const bureauGroups = Object.entries(
-    alertAgents.reduce<Record<number, AlertAgent[]>>((acc, a) => {
+    alertAgents.reduce<Record<number, typeof alertAgents>>((acc, a) => {
       if (!acc[a.bureau_id]) acc[a.bureau_id] = []
       acc[a.bureau_id].push(a)
       return acc
@@ -323,12 +241,12 @@ const PresenceOverview: React.FC = () => {
                   type="time"
                   className="threshold-input"
                   value={threshold}
-                  onChange={(e) => setThreshold(e.target.value)}
+                  onChange={(e) => dispatch(setThreshold(e.target.value))}
                 />
               </div>
               <button
                 className="btn-refresh"
-                onClick={() => { fetchAlerts(); fetchAllBureauxData() }}
+                onClick={() => { dispatch(fetchAlerts()); dispatch(fetchAllBureauxData()) }}
                 disabled={alertsLoading}
               >
                 {alertsLoading ? '...' : '↻'}
@@ -338,12 +256,12 @@ const PresenceOverview: React.FC = () => {
             {alertsError && <div className="alert-error">{alertsError}</div>}
 
             {/* Chart % en service par bureau */}
-            {Object.keys(bureauFullData).length > 0 && (
+            {Object.keys(allBureauxData).length > 0 && (
               <div className="bureau-chart-section">
                 <span className="bureau-chart-title">% En service par bureau</span>
                 <div className="bureau-chart-grid">
                   {BUREAU_IDS_ALL.map((bureau_id) => {
-                    const agents  = (bureauFullData[bureau_id] ?? []).filter((a) => a.is_active !== 0 && a.is_active !== false)
+                    const agents  = (allBureauxData[bureau_id] ?? []).filter((a) => a.is_active !== 0 && a.is_active !== false)
                     const bAlerts = alertsByBureau[bureau_id] ?? []
                     const total   = agents.length
                     if (total === 0) return null
@@ -405,7 +323,7 @@ const PresenceOverview: React.FC = () => {
                 {BUREAU_IDS_ALL.map((bureau_id) => {
                   const bName      = BUREAU_NAMES[bureau_id] ?? `Bureau ${bureau_id}`
                   const bAlerts    = alertsByBureau[bureau_id] ?? []
-                  const rawAgents  = (bureauFullData[bureau_id] ?? []).filter((a) => a.is_active !== 0 && a.is_active !== false)
+                  const rawAgents  = (allBureauxData[bureau_id] ?? []).filter((a) => a.is_active !== 0 && a.is_active !== false)
                   const isExpanded = expandedBureauId === bureau_id
                   const isLoadingFull = bureauLoadingId === bureau_id
                   const activeFilter = bureauCardFilter[bureau_id] ?? 'all'
@@ -592,13 +510,13 @@ const PresenceOverview: React.FC = () => {
               </div>
               <div className="threshold-control">
                 <label htmlFor="threshold">⏰ Seuil retard</label>
-                <input id="threshold" type="time" className="threshold-input" value={threshold} onChange={(e) => setThreshold(e.target.value)} />
+                <input id="threshold" type="time" className="threshold-input" value={threshold} onChange={(e) => dispatch(setThreshold(e.target.value))} />
               </div>
               <div className="agent-map-filters">
                 <button className={`filter-btn ${filter === 'all' ? 'filter-btn--active' : ''}`} onClick={() => setFilter('all')}>Tous ({users.length})</button>
                 <button className={`filter-btn ${filter === 'issues' ? 'filter-btn--active' : ''}`} onClick={() => setFilter('issues')}>⚠ Problèmes ({cAbsent + cLate + cNoCheck})</button>
               </div>
-              <button className="btn-refresh" onClick={() => fetchDay(selectedDate)} disabled={loading}>{loading ? '...' : '↻'}</button>
+              <button className="btn-refresh" onClick={() => dispatch(fetchBureauDay(selectedDate))} disabled={bureauDayLoading}>{bureauDayLoading ? '...' : '↻'}</button>
             </div>
 
             {/* Alertes du jour (manager) */}
@@ -606,7 +524,7 @@ const PresenceOverview: React.FC = () => {
               <div className="alerts-section-header">
                 <span className="alerts-section-title">⚠️ Alertes du jour</span>
                 <span className="alerts-section-date">{formatDateFR(todayISO())}</span>
-                <button className="btn-refresh" onClick={fetchAlerts} disabled={alertsLoading}>{alertsLoading ? '...' : '↻'}</button>
+                <button className="btn-refresh" onClick={() => dispatch(fetchAlerts())} disabled={alertsLoading}>{alertsLoading ? '...' : '↻'}</button>
               </div>
               {alertsError && <div className="alert-error">{alertsError}</div>}
               <div className="alerts-counters">
@@ -671,9 +589,9 @@ const PresenceOverview: React.FC = () => {
               <div className="counter-card counter-waiting"><span className="counter-num">{cNoCheck}</span><span className="counter-label">Pas pointé</span></div>
             </div>
 
-            {error && <div className="alert-error">{error}</div>}
+            {bureauDayError && <div className="alert-error">{bureauDayError}</div>}
 
-            {loading ? (
+            {bureauDayLoading ? (
               <div className="loading-state">Chargement...</div>
             ) : displayed.length === 0 ? (
               <div className="agents-empty">Aucun agent à afficher</div>

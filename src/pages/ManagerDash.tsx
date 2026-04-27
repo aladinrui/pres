@@ -247,6 +247,7 @@ const ManagerDash: React.FC = () => {
     try {
       await axios.patch(`${API}/presence-user-map/by-user/${renamingUser.user_id}`, {
         nom_presence: nomPresenceDraft.trim(),
+        bureau_id: bureauId,
       })
       closeRename()
       await fetchDay(selectedDate)

@@ -90,7 +90,7 @@ const AgentMapList: React.FC = () => {
     try {
       setLoading(true)
       setError(null)
-      const url = (!isAdmin || showAllBureaux)
+      const url = (isAdmin && showAllBureaux)
         ? `${API}/presence-user-map`
         : `${API}/presence-user-map?bureau_id=${activeBureauId}`
       const res = await axios.get<AgentMap[]>(url)

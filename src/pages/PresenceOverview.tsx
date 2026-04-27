@@ -130,6 +130,7 @@ const PresenceOverview: React.FC = () => {
   const [expandedBureauId, setExpandedBureauId]     = useState<number | null>(null)
   const [bureauLoadingId, setBureauLoadingId]       = useState<number | null>(null)
   const [bureauCardFilter, setBureauCardFilter]     = useState<Record<number, 'all' | 'non_pointe' | 'absent' | 'retard'>>({})
+  const [showPresent, setShowPresent]               = useState<Record<number, boolean>>({})
 
   const toggleCardFilter = (bureau_id: number, f: 'non_pointe' | 'absent' | 'retard', e: React.MouseEvent) => {
     e.stopPropagation()
@@ -421,11 +422,29 @@ const PresenceOverview: React.FC = () => {
                       </div>
 
                       {/* Liste complète expandée */}
-                      {isExpanded && (
+                      {isExpanded && (() => {
+                        const isPresentShown = showPresent[bureau_id] ?? false
+                        const displayedAgents = isPresentShown
+                          ? fullAgents
+                          : fullAgents.filter((ag) => (statusMap.get(ag.user_id) ?? 'present') !== 'present')
+                        const nbHidden = fullAgents.filter((ag) => (statusMap.get(ag.user_id) ?? 'present') === 'present').length
+                        return (
                         <div className="bureau-card-body">
                           {isLoadingFull ? (
                             <div className="loading-state" style={{ padding: '0.75rem' }}>Chargement...</div>
-                          ) : fullAgents.length === 0 ? (
+                          ) : displayedAgents.length === 0 && !isPresentShown ? (
+                            <div className="agents-empty" style={{ padding: '0.75rem' }}>
+                              Aucun problème
+                              {nbHidden > 0 && (
+                                <button
+                                  className="btn-show-present"
+                                  onClick={() => setShowPresent(prev => ({ ...prev, [bureau_id]: true }))}
+                                >
+                                  Voir {nbHidden} présent{nbHidden > 1 ? 's' : ''}
+                                </button>
+                              )}
+                            </div>
+                          ) : displayedAgents.length === 0 ? (
                             <div className="agents-empty" style={{ padding: '0.75rem' }}>Aucun agent</div>
                           ) : (
                             <div className="bureau-full-table">
@@ -435,7 +454,17 @@ const PresenceOverview: React.FC = () => {
                                 <span>Heure</span>
                                 <span>Note</span>
                               </div>
-                              {[...fullAgents]
+                              {nbHidden > 0 && (
+                                <div style={{ padding: '0.4rem 0.75rem', borderBottom: '1px solid #1e293b' }}>
+                                  <button
+                                    className="btn-show-present"
+                                    onClick={() => setShowPresent(prev => ({ ...prev, [bureau_id]: !isPresentShown }))}
+                                  >
+                                    {isPresentShown ? `▲ Masquer les présents (${nbHidden})` : `▼ Voir ${nbHidden} présent${nbHidden > 1 ? 's' : ''}`}
+                                  </button>
+                                </div>
+                              )}
+                              {[...displayedAgents]
                                 .sort((a, b) => {
                                   const order: Record<string, number> = { absent: 0, retard: 1, conge: 2, non_pointe: 3, present: 4 }
                                   const sa = statusMap.get(a.user_id) ?? 'present'
@@ -447,11 +476,12 @@ const PresenceOverview: React.FC = () => {
                                   const ci = firstCheckin(agent)
                                   const isLatePresent = agStatus === 'retard' && ci !== null
                                   const sm: { label: string; color: string } =
-                                    isLatePresent       ? { label: 'Présent / En retard', color: '#f59e0b' } :
-                                    agStatus === 'retard'    ? { label: 'En retard',          color: '#f59e0b' } :
-                                    agStatus === 'absent'    ? { label: 'Absent',              color: '#ef4444' } :
-                                    agStatus === 'non_pointe'? { label: 'Pas pointé',          color: '#6b7280' } :
-                                                               { label: 'Présent',             color: '#22c55e' }
+                                    isLatePresent            ? { label: 'Présent / En retard', color: '#f59e0b' } :
+                                    agStatus === 'retard'    ? { label: 'En retard',           color: '#f59e0b' } :
+                                    agStatus === 'absent'    ? { label: 'Absent',               color: '#ef4444' } :
+                                    agStatus === 'non_pointe'? { label: 'Pas pointé',           color: '#6b7280' } :
+                                    agStatus === 'conge'     ? { label: 'Congé',                color: '#818cf8' } :
+                                                               { label: 'Présent',              color: '#22c55e' }
                                   return (
                                     <div key={agent.user_id} className="bureau-full-row">
                                       <div className="agent-info-line">
@@ -484,7 +514,8 @@ const PresenceOverview: React.FC = () => {
                             </div>
                           )}
                         </div>
-                      )}
+                        )
+                      })()}
                     </div>
                   )
                 })}

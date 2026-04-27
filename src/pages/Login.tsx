@@ -32,34 +32,32 @@ const Login: React.FC = () => {
       <div className="login-card">
         <div className="login-header">
           <div className="login-logo">⏱</div>
-          <h1>Pointage</h1>
-          <p>Connectez-vous pour enregistrer votre présence</p>
         </div>
 
         {error && <div className="login-error">{error}</div>}
 
         <form onSubmit={handleSubmit} className="login-form">
           <div className="form-group">
-            <label htmlFor="username">Nom d'utilisateur</label>
+            <label htmlFor="username">Username</label>
             <input
               id="username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="Votre identifiant"
+              placeholder="Your username"
               required
               autoComplete="username"
             />
           </div>
 
           <div className="form-group">
-            <label htmlFor="password">Mot de passe</label>
+            <label htmlFor="password">Password</label>
             <input
               id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Votre mot de passe"
+              placeholder="Your password"
               required
               autoComplete="current-password"
             />
@@ -73,7 +71,7 @@ const Login: React.FC = () => {
                 type="text"
                 value={code2fa}
                 onChange={(e) => setCode2fa(e.target.value)}
-                placeholder="Code à 6 chiffres"
+                placeholder="6-digit code"
                 maxLength={6}
                 autoComplete="one-time-code"
               />
@@ -81,7 +79,7 @@ const Login: React.FC = () => {
           )}
 
           <button type="submit" className="btn-login" disabled={loading}>
-            {loading ? 'Connexion...' : 'Se connecter'}
+            {loading ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
       </div>

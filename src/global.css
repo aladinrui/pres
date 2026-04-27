@@ -1986,20 +1986,23 @@ html, body, #root {
 /* Tag profil coloré (ret/sup/man/cm) */
 .profil-tag {
   display: inline-block;
-  border: 1px solid;
-  border-radius: var(--radius-sm);
-  padding: 0.05rem 0.35rem;
+  border: none;
+  background: transparent;
+  padding: 0;
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   white-space: nowrap;
   flex-shrink: 0;
 }
-.profil-tag--ret  { color: #fbbf24; border-color: #f59e0b55; background: #f59e0b15; }
-.profil-tag--sup  { color: #a5b4fc; border-color: #6366f155; background: #6366f115; }
-.profil-tag--man  { color: #4ade80; border-color: #22c55e55; background: #22c55e15; }
-.profil-tag--cm   { color: #67e8f9; border-color: #06b6d455; background: #06b6d415; }
-.profil-tag--agent { color: #94a3b8; border-color: #47556955; background: transparent; }
+.profil-tag--ret,
+.profil-tag--agent     { color: #94a3b8; }
+.profil-tag--sup,
+.profil-tag--support   { color: #a5b4fc; }
+.profil-tag--man,
+.profil-tag--manager   { color: #4ade80; }
+.profil-tag--cm,
+.profil-tag--crm_manager { color: #67e8f9; }
 
 
 .alerts-status-badge {

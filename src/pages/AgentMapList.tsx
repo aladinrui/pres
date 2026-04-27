@@ -23,11 +23,13 @@ function bureauLabel(id: number) { return BUREAU_NAMES[id] ? `${BUREAU_NAMES[id]
 
 const PROFIL_LABEL: Record<string, string> = {
   ret:         'R',
+  agent:       'R',
   sup:         'S',
+  support:     'S',
   man:         'M',
+  manager:     'M',
   cm:          'CM',
   crm_manager: 'CM',
-  agent:       'R',
 }
 function profilLabel(p: string | null | undefined) {
   if (!p) return null

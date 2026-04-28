@@ -74,7 +74,6 @@ type BureauDayResponse = {
 }
 
 const STATUS_OPTIONS: { value: UserDay['status']; label: string; color: string }[] = [
-  { value: 'present', label: 'Présent',  color: '#22c55e' },
   { value: 'absent',  label: 'Absent',   color: '#ef4444' },
   { value: 'partial', label: 'Partiel',  color: '#f59e0b' },
   { value: 'conge',   label: 'Congé',    color: '#818cf8' },
@@ -423,7 +422,7 @@ const ManagerDash: React.FC = () => {
                 {users.filter((u) => ['present','present_late'].includes(enrichedStatus(u, threshold, selectedDate))).map((user) => {
                   const es = enrichedStatus(user, threshold, selectedDate)
                   return (
-                    <div key={user.user_id} className="status-col-agent">
+                    <div key={user.user_id} className="status-col-agent" onClick={() => openEdit(user, selectedDate)} style={{ cursor: 'pointer' }}>
                       <div className="status-col-agent-info">
                         <span className="agent-name">{user.username}</span>
                         {user.profil && <span className="agent-profil">{profilLabel(user.profil)}</span>}
@@ -448,7 +447,7 @@ const ManagerDash: React.FC = () => {
               </div>
               <div className="status-col-body">
                 {users.filter((u) => enrichedStatus(u, threshold, selectedDate) === 'present_late').map((user) => (
-                  <div key={user.user_id} className="status-col-agent">
+                  <div key={user.user_id} className="status-col-agent" onClick={() => openEdit(user, selectedDate)} style={{ cursor: 'pointer' }}>
                     <div className="status-col-agent-info">
                       <span className="agent-name">{user.username}</span>
                       {user.profil && <span className="agent-profil">{profilLabel(user.profil)}</span>}
@@ -481,7 +480,7 @@ const ManagerDash: React.FC = () => {
                 {users.filter((u) => ['absent','conge'].includes(enrichedStatus(u, threshold, selectedDate))).map((user) => {
                   const es = enrichedStatus(u, threshold, selectedDate)
                   return (
-                    <div key={user.user_id} className="status-col-agent">
+                    <div key={user.user_id} className="status-col-agent" onClick={() => openEdit(user, selectedDate)} style={{ cursor: 'pointer' }}>
                       <div className="status-col-agent-info">
                         <span className="agent-name">{user.username}</span>
                         {user.profil && <span className="agent-profil">{profilLabel(user.profil)}</span>}
@@ -504,7 +503,7 @@ const ManagerDash: React.FC = () => {
               </div>
               <div className="status-col-body">
                 {users.filter((u) => enrichedStatus(u, threshold, selectedDate) === 'non_pointe').map((user) => (
-                  <div key={user.user_id} className="status-col-agent">
+                  <div key={user.user_id} className="status-col-agent" onClick={() => openEdit(user, selectedDate)} style={{ cursor: 'pointer' }}>
                     <div className="status-col-agent-info">
                       <span className="agent-name">{user.username}</span>
                       {user.profil && <span className="agent-profil">{profilLabel(user.profil)}</span>}

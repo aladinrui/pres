@@ -265,7 +265,7 @@ const Presence: React.FC = () => {
           <section className="clock-section">
             <div className="clock-date">{formatFullDate(now)}</div>
             <div className="clock-time">
-              {addOffset(now).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              {now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </div>
             <div className="clock-week">
               Semaine {getWeekNumber(now)} — Jour {getDayOfYear(now)} de l'année

@@ -9,7 +9,7 @@ import RequireAuth from './components/RequireAuth'
 import RequireRole from './components/RequireRole'
 import { useAppSelector } from './store/hooks'
 
-const MANAGER_ROLES = ['manager', 'admin', 'superadmin']
+const MANAGER_ROLES = ['man', 'manager', 'admin', 'superadmin']
 const ADMIN_ROLES   = ['admin', 'superadmin']
 
 const ManagerRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => (

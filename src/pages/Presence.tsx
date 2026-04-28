@@ -79,8 +79,10 @@ type MonthData = {
   days: MonthDay[]
 }
 
+const addOffset = (d: Date): Date => new Date(d.getTime() + 3 * 60 * 60 * 1000)
+
 const formatTime = (isoString: string): string => {
-  const d = new Date(isoString)
+  const d = addOffset(new Date(isoString))
   return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
@@ -263,7 +265,7 @@ const Presence: React.FC = () => {
           <section className="clock-section">
             <div className="clock-date">{formatFullDate(now)}</div>
             <div className="clock-time">
-              {now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              {addOffset(now).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </div>
             <div className="clock-week">
               Semaine {getWeekNumber(now)} — Jour {getDayOfYear(now)} de l'année

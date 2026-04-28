@@ -91,8 +91,10 @@ function formatDateFR(iso: string): string {
   return `${JOURS[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]} ${d.getFullYear()}`
 }
 
+function addOffset(d: Date): Date { return new Date(d.getTime() + 3 * 60 * 60 * 1000) }
+
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return addOffset(new Date(iso)).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 function addDays(iso: string, n: number): string {

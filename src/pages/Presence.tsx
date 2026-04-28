@@ -244,7 +244,7 @@ const Presence: React.FC = () => {
             <span className="header-username">{username}</span>
             {profil && <span className="header-badge">{profil}</span>}
           </span>
-          {['manager', 'admin', 'superadmin'].includes(profil.toLowerCase()) && (
+          {['manager', 'man', 'crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profil.toLowerCase()) && (
             <>
               {['admin', 'superadmin'].includes(profil.toLowerCase())
                 ? <Link to="/manager" className="btn-manager-link">📊 Général</Link>

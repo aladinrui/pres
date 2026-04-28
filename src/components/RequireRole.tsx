@@ -4,7 +4,7 @@ import { useAppSelector } from '../store/hooks'
 
 type Props = {
   roles: string[]
-  children: React.ReactElement
+  children: React.ReactNode
 }
 
 const RequireRole: React.FC<Props> = ({ roles, children }) => {
@@ -14,7 +14,7 @@ const RequireRole: React.FC<Props> = ({ roles, children }) => {
     return <Navigate to="/" replace />
   }
 
-  return children
+  return <>{children}</>
 }
 
 export default RequireRole

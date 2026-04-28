@@ -29,7 +29,7 @@ const HomeRoute: React.FC = () => {
 
 /** Redirige les managers (non-admin) depuis /manager vers /manager/day */
 const ManagerHomeRoute: React.FC = () => {
-  const profil = useAppSelector((s) => (s.user.userDetail?.profil as string | undefined) ?? '')
+  const profil = (useAppSelector((s) => s.user.userDetail?.profil as string | undefined) ?? '').toLowerCase()
   if (!ADMIN_ROLES.includes(profil)) return <Navigate to="/manager/day" replace />
   return <PresenceOverview />
 }

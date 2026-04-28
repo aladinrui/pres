@@ -92,7 +92,7 @@ const initialState: PresenceState = {
   allBureauxData: {},
   allBureauxLoading: false,
   selectedDate: todayISO(),
-  threshold: '10:00',
+  threshold: '10:30',
 }
 
 // ── Thunks ─────────────────────────────────────────────────────────────────

@@ -60,8 +60,13 @@ function formatDateFR(iso: string) {
 
 function addOffset(d: Date): Date { return new Date(d.getTime() + 3 * 60 * 60 * 1000) }
 
+/** Force UTC parsing d'un timestamp ISO/MySQL — "2026-04-28 07:15:22" → Date UTC */
+function parseUTC(ts: string): Date {
+  return new Date(ts.replace(' ', 'T').replace(/([^Z])$/, '$1Z'))
+}
+
 function formatTime(iso: string) {
-  return addOffset(new Date(iso)).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  return addOffset(parseUTC(iso)).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
 }
 
 /** Formate "HH:MM:SS" en "HH:MM" */
@@ -70,10 +75,13 @@ function formatHHMM(t: string | null | undefined): string | null {
   return t.slice(0, 5)
 }
 
-/** Compare "HH:MM:SS" au seuil "HH:MM" — retourne true si l'heure dépasse le seuil */
+/** Compare "HH:MM:SS" UTC au seuil "HH:MM" local — applique +3h avant comparaison */
 function isCheckinLate(checkinTime: string | null | undefined, threshold: string): boolean {
   if (!checkinTime) return false
-  return checkinTime.slice(0, 5) > threshold
+  const [h, m] = checkinTime.split(':').map(Number)
+  const localMinutes = (h * 60 + m + 180) % (24 * 60) // UTC → +3h local
+  const localHHMM = `${String(Math.floor(localMinutes / 60)).padStart(2, '0')}:${String(localMinutes % 60).padStart(2, '0')}`
+  return localHHMM > threshold
 }
 
 /** Retourne l'heure du 1er pointage IN, ou null */
@@ -86,9 +94,8 @@ function firstCheckin(user: UserDay): string | null {
 function isLateByTime(user: UserDay, threshold: string): boolean {
   const ci = firstCheckin(user)
   if (!ci) return false
-  // Convertir en heure locale (même logique que l'affichage)
-  const localTime = addOffset(new Date(ci))
-  const hhmm = localTime.toISOString().slice(11, 16) // "HH:MM" en UTC décalé = heure locale
+  const localTime = addOffset(parseUTC(ci))
+  const hhmm = localTime.toISOString().slice(11, 16)
   return hhmm > threshold
 }
 
@@ -109,7 +116,7 @@ const KIND_META: Record<AlertKind, { label: string; color: string; priority: num
   absent:         { label: 'Absent',              color: '#ef4444', priority: 1 },
   'late-status':  { label: 'Partiel/Retard',      color: '#f59e0b', priority: 2 },
   'late-time':    { label: 'En retard',            color: '#fb923c', priority: 3 },
-  'present-late': { label: 'Présent / En retard', color: '#f59e0b', priority: 3 },
+  'present-late': { label: 'Présent / En retard', color: '#4ade80', priority: 3 },
   'not-checked':  { label: 'Pas pointé',           color: '#6b7280', priority: 4 },
   conge:          { label: 'Congé',                color: '#818cf8', priority: 5 },
   ok:             { label: 'OK',                   color: '#22c55e', priority: 6 },
@@ -152,10 +159,10 @@ const PresenceOverview: React.FC = () => {
   const [filter, setFilter]   = useState<'all' | 'issues'>('all')
   const [expandedBureauId, setExpandedBureauId]     = useState<number | null>(null)
   const [bureauLoadingId, setBureauLoadingId]       = useState<number | null>(null)
-  const [bureauCardFilter, setBureauCardFilter]     = useState<Record<number, 'all' | 'non_pointe' | 'absent' | 'retard'>>({})
+  const [bureauCardFilter, setBureauCardFilter]     = useState<Record<number, 'all' | 'non_pointe' | 'absent' | 'retard' | 'present-late'>>({})
   const [showPresent, setShowPresent]               = useState<Record<number, boolean>>({})
 
-  const toggleCardFilter = (bureau_id: number, f: 'non_pointe' | 'absent' | 'retard', e: React.MouseEvent) => {
+  const toggleCardFilter = (bureau_id: number, f: 'non_pointe' | 'absent' | 'retard' | 'present-late', e: React.MouseEvent) => {
     e.stopPropagation()
     setBureauCardFilter(prev => ({ ...prev, [bureau_id]: prev[bureau_id] === f ? 'all' : f }))
     if (expandedBureauId !== bureau_id) toggleBureau(bureau_id)
@@ -239,7 +246,7 @@ const PresenceOverview: React.FC = () => {
             </>
           ) : (
             <>
-              <Link to="/" className="btn-manager-link">⏱ Pointer</Link>
+              <Link to="/pointer" className="btn-manager-link">⏱ Pointer</Link>
               <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
               <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
             </>
@@ -329,7 +336,7 @@ const PresenceOverview: React.FC = () => {
                         <span className="bureau-chart-label">{bName}</span>
                         <div className="bureau-chart-bar-track">
                           <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nPres     / total * 100)}%`, background: '#22c55e' }} />
-                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nPresLate / total * 100)}%`, background: '#f59e0b', opacity: 0.7 }} />
+                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nPresLate / total * 100)}%`, background: '#4ade80', opacity: 0.6 }} />
                           <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nRet      / total * 100)}%`, background: '#fb923c' }} />
                           <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nAbs      / total * 100)}%`, background: '#ef4444' }} />
                           <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nConge    / total * 100)}%`, background: '#818cf8' }} />
@@ -346,7 +353,7 @@ const PresenceOverview: React.FC = () => {
                 </div>
                 <div className="bureau-chart-legend">
                   <span className="bureau-chart-legend-item"><i style={{ background: '#22c55e' }} />Présent</span>
-                  <span className="bureau-chart-legend-item"><i style={{ background: '#f59e0b', opacity: 0.7 }} />Prés/Retard</span>
+                  <span className="bureau-chart-legend-item"><i style={{ background: '#4ade80', opacity: 0.6 }} />Prés/Retard</span>
                   <span className="bureau-chart-legend-item"><i style={{ background: '#fb923c' }} />Retard</span>
                   <span className="bureau-chart-legend-item"><i style={{ background: '#ef4444' }} />Absent</span>
                   <span className="bureau-chart-legend-item"><i style={{ background: '#818cf8' }} />Congé</span>
@@ -403,19 +410,23 @@ const PresenceOverview: React.FC = () => {
                     if (!statusMap.has(ag.user_id))                         statusMap.set(ag.user_id, 'non_pointe')
                   })
 
-                  const nbRet   = [...statusMap.values()].filter((s) => s === 'retard' || s === 'present-late').length
+                  const nbRetPure  = [...statusMap.values()].filter((s) => s === 'retard').length
+                  const nbPresLate = [...statusMap.values()].filter((s) => s === 'present-late').length
+                  const nbRet      = nbRetPure + nbPresLate
                   const nbPres  = [...statusMap.values()].filter((s) => s === 'present').length
                   const nbConge = [...statusMap.values()].filter((s) => s === 'conge').length
                   const hasIssues = nbNP + nbAbs + nbRet > 0
 
-                  const npIds   = new Set([...statusMap.entries()].filter(([,s]) => s === 'non_pointe').map(([id]) => id))
-                  const absIds  = new Set([...statusMap.entries()].filter(([,s]) => s === 'absent').map(([id]) => id))
-                  const retIds  = new Set([...statusMap.entries()].filter(([,s]) => s === 'retard' || s === 'present-late').map(([id]) => id))
+                  const npIds       = new Set([...statusMap.entries()].filter(([,s]) => s === 'non_pointe').map(([id]) => id))
+                  const absIds      = new Set([...statusMap.entries()].filter(([,s]) => s === 'absent').map(([id]) => id))
+                  const retIds      = new Set([...statusMap.entries()].filter(([,s]) => s === 'retard').map(([id]) => id))
+                  const presLateIds = new Set([...statusMap.entries()].filter(([,s]) => s === 'present-late').map(([id]) => id))
 
-                  const fullAgents = activeFilter === 'all'        ? rawAgents
-                    : activeFilter === 'non_pointe' ? rawAgents.filter((ag) => npIds.has(ag.user_id))
-                    : activeFilter === 'absent'     ? rawAgents.filter((ag) => absIds.has(ag.user_id))
-                    : activeFilter === 'retard'     ? rawAgents.filter((ag) => retIds.has(ag.user_id))
+                  const fullAgents = activeFilter === 'all'           ? rawAgents
+                    : activeFilter === 'non_pointe'  ? rawAgents.filter((ag) => npIds.has(ag.user_id))
+                    : activeFilter === 'absent'      ? rawAgents.filter((ag) => absIds.has(ag.user_id))
+                    : activeFilter === 'retard'      ? rawAgents.filter((ag) => retIds.has(ag.user_id))
+                    : activeFilter === 'present-late'? rawAgents.filter((ag) => presLateIds.has(ag.user_id))
                     : rawAgents
 
                   return (
@@ -438,11 +449,20 @@ const PresenceOverview: React.FC = () => {
                               <span className="bstat-lbl">Prés</span>
                             </span>
                           )}
+                          {nbPresLate > 0 && (
+                            <button
+                              className={`bstat bstat--pres-late${activeFilter === 'present-late' ? ' bstat--active' : ''}`}
+                              onClick={(e) => toggleCardFilter(bureau_id, 'present-late', e)}
+                            >
+                              <span className="bstat-num">{nbPresLate}</span>
+                              <span className="bstat-lbl">P/R</span>
+                            </button>
+                          )}
                           <button
-                            className={`bstat bstat--ret${nbRet === 0 ? ' bstat--zero' : ''}${activeFilter === 'retard' ? ' bstat--active' : ''}`}
+                            className={`bstat bstat--ret${nbRetPure === 0 ? ' bstat--zero' : ''}${activeFilter === 'retard' ? ' bstat--active' : ''}`}
                             onClick={(e) => toggleCardFilter(bureau_id, 'retard', e)}
                           >
-                            <span className="bstat-num">{nbRet}</span>
+                            <span className="bstat-num">{nbRetPure}</span>
                             <span className="bstat-lbl">Ret</span>
                           </button>
                           <button
@@ -474,8 +494,14 @@ const PresenceOverview: React.FC = () => {
                         const isPresentShown = showPresent[bureau_id] ?? false
                         const displayedAgents = isPresentShown
                           ? fullAgents
-                          : fullAgents.filter((ag) => (statusMap.get(ag.user_id) ?? 'present') !== 'present')
-                        const nbHidden = fullAgents.filter((ag) => (statusMap.get(ag.user_id) ?? 'present') === 'present').length
+                          : fullAgents.filter((ag) => {
+                              const s = statusMap.get(ag.user_id) ?? 'present'
+                              return s !== 'present' && s !== 'present-late'
+                            })
+                        const nbHidden = fullAgents.filter((ag) => {
+                          const s = statusMap.get(ag.user_id) ?? 'present'
+                          return s === 'present' || s === 'present-late'
+                        }).length
                         return (
                         <div className="bureau-card-body">
                           {isLoadingFull ? (
@@ -534,7 +560,7 @@ const PresenceOverview: React.FC = () => {
                                       : (ci ? isLateByTime(agent, threshold) : false)
                                   )) ? 'present-late' : agStatus
                                   const sm: { label: string; color: string } =
-                                    effectiveStatus === 'present-late' ? { label: 'Présent / En retard', color: '#f59e0b' } :
+                                    effectiveStatus === 'present-late' ? { label: 'Présent / En retard', color: '#4ade80' } :
                                     effectiveStatus === 'retard'       ? { label: 'En retard',            color: '#fb923c' } :
                                     effectiveStatus === 'absent'       ? { label: 'Absent',                color: '#ef4444' } :
                                     effectiveStatus === 'non_pointe'   ? { label: 'Pas pointé',            color: '#6b7280' } :

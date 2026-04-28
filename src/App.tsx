@@ -88,6 +88,7 @@ const App: React.FC = () => {
 
         {/* Pointage personnel — admin redirigé vers /manager */}
         <Route path="/" element={<RequireAuth><HomeRoute /></RequireAuth>} />
+        <Route path="/pointer" element={<RequireAuth><Presence /></RequireAuth>} />
 
         {/* Manager / Admin uniquement */}
         <Route path="/manager" element={<ManagerRoute><ManagerHomeRoute /></ManagerRoute>} />

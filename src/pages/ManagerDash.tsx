@@ -94,8 +94,28 @@ function formatDateFR(iso: string): string {
 
 function addOffset(d: Date): Date { return new Date(d.getTime() + 3 * 60 * 60 * 1000) }
 
+function parseUTC(ts: string): Date {
+  return new Date(ts.replace(' ', 'T').replace(/([^Z])$/, '$1Z'))
+}
+
 function formatTime(iso: string): string {
-  return addOffset(new Date(iso)).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  // addOffset shifts UTC to local, toISOString reads the shifted UTC value directly
+  // Avoids double-offset from toLocaleTimeString in UTC+3 browsers
+  const shifted = addOffset(parseUTC(iso))
+  return shifted.toISOString().slice(11, 16)
+}
+
+/** Retourne le décalage entre une heure "HH:MM" et le seuil "HH:MM", ex: "+45min" ou "+1h15" */
+function formatDelay(timeHHMM: string, threshold: string): string {
+  const [th, tm] = threshold.split(':').map(Number)
+  const [hh, mm] = timeHHMM.split(':').map(Number)
+  const diff = (hh * 60 + mm) - (th * 60 + tm)
+  if (diff <= 0) return ''
+  const h = Math.floor(diff / 60)
+  const m = diff % 60
+  if (h === 0) return `+${m}min`
+  if (m === 0) return `+${h}h`
+  return `+${h}h${String(m).padStart(2, '0')}`
 }
 
 function addDays(iso: string, n: number): string {
@@ -109,10 +129,12 @@ function firstCheckin(user: UserDay): string | null {
   return ins.length > 0 ? ins[0].timestamp : null
 }
 
-function isLate(user: UserDay, threshold: string, date: string): boolean {
+function isLate(user: UserDay, threshold: string, _date: string): boolean {
   const ci = firstCheckin(user)
   if (!ci) return false
-  return new Date(ci) > new Date(`${date}T${threshold}:00`)
+  const localTime = addOffset(parseUTC(ci))
+  const hhmm = localTime.toISOString().slice(11, 16)
+  return hhmm > threshold
 }
 
 /** Retourne le statut enrichi pour un agent */
@@ -133,7 +155,7 @@ const ManagerDash: React.FC = () => {
   const profil = (userDetail?.profil as string) ?? ''
   const isAdmin = profil === 'admin' || profil === 'superadmin'
 
-  const BUREAU_IDS = [4, 5, 6, 7, 8, 9, 10]
+  const BUREAU_IDS = [3, 4, 5, 6, 7, 8, 9, 10]
 
   const [selectedBureauId, setSelectedBureauId] = useState<number>(0)
   const bureauId = selectedBureauId || myBureauId
@@ -159,7 +181,7 @@ const ManagerDash: React.FC = () => {
   const [nomPresenceDraft, setNomPresenceDraft] = useState('')
   const [renaming, setRenaming] = useState(false)
   const [renameError, setRenameError] = useState<string | null>(null)
-  const [threshold, setThreshold] = useState('10:00')
+  const [threshold, setThreshold] = useState('10:30')
 
   const fetchDay = useCallback(async (date: string) => {
     if (!bureauId) return
@@ -294,7 +316,7 @@ const ManagerDash: React.FC = () => {
             </>
           ) : (
             <>
-              <Link to="/" className="btn-manager-link">⏱ Pointer</Link>
+              <Link to="/pointer" className="btn-manager-link">⏱ Pointer</Link>
               <span className="btn-manager-link btn-manager-link--active">📅 Journée</span>
               <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
             </>
@@ -383,118 +405,116 @@ const ManagerDash: React.FC = () => {
 
         {error && <div className="alert-error">{error}</div>}
 
-        {/* Liste agents */}
+        {/* Colonnes par statut */}
         {loading ? (
           <div className="loading-state">Chargement...</div>
+        ) : users.length === 0 ? (
+          <div className="agents-empty">Aucun agent pour ce bureau ce jour</div>
         ) : (
-          <div className="agents-table">
-            <div className="agents-table-header">
-              <span>Agent</span>
-              <span>Statut</span>
-              <span>Pointage</span>
-              <span>Note manager</span>
-              <span></span>
+          <div className="status-columns">
+
+            {/* En service (présent + présent/retard) */}
+            <div className="status-col">
+              <div className="status-col-header status-col-header--present">
+                <span>● En service</span>
+                <span className="status-col-count">{presentCount}/{users.length}</span>
+              </div>
+              <div className="status-col-body">
+                {users.filter((u) => ['present','present_late'].includes(enrichedStatus(u, threshold, selectedDate))).map((user) => {
+                  const es = enrichedStatus(user, threshold, selectedDate)
+                  return (
+                    <div key={user.user_id} className="status-col-agent">
+                      <div className="status-col-agent-info">
+                        <span className="agent-name">{user.username}</span>
+                        {user.profil && <span className="agent-profil">{profilLabel(user.profil)}</span>}
+                        {es === 'present_late' && (
+                          <span style={{ fontSize: '0.7rem', color: '#4ade80', opacity: 0.8 }}>⏰</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+                {users.filter((u) => ['present','present_late'].includes(enrichedStatus(u, threshold, selectedDate))).length === 0 && (
+                  <div className="status-col-empty">—</div>
+                )}
+              </div>
             </div>
 
-            {users.length === 0 ? (
-              <div className="agents-empty">Aucun agent pour ce bureau ce jour</div>
-            ) : (
-              users.map((user) => (
-                <React.Fragment key={user.user_id}>
-                  <div className="agent-row">
-                    {/* Nom */}
-                    <div className="agent-info">
+            {/* En retard (sorti en retard uniquement) */}
+            <div className="status-col">
+              <div className="status-col-header status-col-header--late">
+                <span>⏰ En retard</span>
+                <span className="status-col-count">{lateCount}</span>
+              </div>
+              <div className="status-col-body">
+                {users.filter((u) => enrichedStatus(u, threshold, selectedDate) === 'present_late').map((user) => (
+                  <div key={user.user_id} className="status-col-agent">
+                    <div className="status-col-agent-info">
                       <span className="agent-name">{user.username}</span>
                       {user.profil && <span className="agent-profil">{profilLabel(user.profil)}</span>}
-                    </div>
-
-                    {/* Statut daily */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       {(() => {
-                        const es = enrichedStatus(user, threshold, selectedDate)
-                        const isLateAgent = es === 'present_late'
-                        const baseStatus = isLateAgent ? 'present' : es
-                        const cfg: Record<string, { label: string; color: string }> = {
-                          present:    { label: 'Présent',    color: '#22c55e' },
-                          absent:     { label: 'Absent',     color: '#ef4444' },
-                          non_pointe: { label: 'Pas pointé', color: '#6b7280' },
-                          conge:      { label: 'Congé',      color: '#818cf8' },
-                        }
-                        const c = cfg[baseStatus] ?? { label: '—', color: '#6b7280' }
+                        const ci = firstCheckin(user)
+                        if (!ci) return null
+                        const t = formatTime(ci)
+                        const delay = formatDelay(t, threshold)
                         return (
                           <>
-                            <span
-                              className="alerts-status-badge"
-                              style={{ background: c.color + '22', color: c.color, borderColor: c.color + '55' }}
-                            >
-                              {c.label}
-                            </span>
-                            {isLateAgent && (
-                              <span
-                                className="alerts-status-badge"
-                                style={{ background: '#f59e0b22', color: '#f59e0b', borderColor: '#f59e0b55', fontSize: '0.7rem' }}
-                              >
-                                ⏰ En retard
-                              </span>
-                            )}
+                            <span className="status-col-time">▶ {t}</span>
+                            {delay && <span className="status-col-delay">{delay}</span>}
                           </>
                         )
                       })()}
                     </div>
+                  </div>
+                ))}
+                {lateCount === 0 && <div className="status-col-empty">—</div>}
+              </div>
+            </div>
 
-                    {/* Dernier pointage */}
-                    <div className="agent-action-col">
-                      {user.last_action === 'in' ? (
-                        <span className="action-badge action-in">● EN SERVICE</span>
-                      ) : user.last_action === 'out' ? (
-                        <span className="action-badge action-out">■ SORTI</span>
-                      ) : (
-                        <span className="action-badge action-none">Pas pointé</span>
-                      )}
-                      {user.logs.length > 0 && (
-                        <button
-                          className="btn-show-logs"
-                          onClick={() => setExpandedUser(expandedUser === user.user_id ? null : user.user_id)}
-                        >
-                          {user.logs.length} pointage{user.logs.length > 1 ? 's' : ''} {expandedUser === user.user_id ? '▲' : '▼'}
-                        </button>
-                      )}
+            {/* Absents / Congés */}
+            <div className="status-col">
+              <div className="status-col-header status-col-header--absent">
+                <span>✗ Absents / Congés</span>
+                <span className="status-col-count">{absentCount} / {congeCount}</span>
+              </div>
+              <div className="status-col-body">
+                {users.filter((u) => ['absent','conge'].includes(enrichedStatus(u, threshold, selectedDate))).map((user) => {
+                  const es = enrichedStatus(u, threshold, selectedDate)
+                  return (
+                    <div key={user.user_id} className="status-col-agent">
+                      <div className="status-col-agent-info">
+                        <span className="agent-name">{user.username}</span>
+                        {user.profil && <span className="agent-profil">{profilLabel(user.profil)}</span>}
+                        <span className="alerts-status-badge" style={{ fontSize: '0.7rem', padding: '1px 6px', background: es === 'conge' ? '#818cf822' : '#ef444422', color: es === 'conge' ? '#818cf8' : '#ef4444', borderColor: es === 'conge' ? '#818cf855' : '#ef444455' }}>
+                          {es === 'conge' ? 'Congé' : 'Absent'}
+                        </span>
+                      </div>
                     </div>
+                  )
+                })}
+                {absentCount + congeCount === 0 && <div className="status-col-empty">—</div>}
+              </div>
+            </div>
 
-                    {/* Note manager */}
-                    <div className="agent-note-preview">
-                      {user.note
-                        ? <span className="note-preview-text" title={user.note}>{user.note}</span>
-                        : <span className="note-preview-empty">—</span>
-                      }
-                    </div>
-
-                    {/* Actions */}
-                    <div className="agent-actions-col">
-                      <button className="btn-agent-edit" onClick={() => openEdit(user, selectedDate)}>
-                        ✏️ Annoter
-                      </button>
+            {/* Non pointés */}
+            <div className="status-col">
+              <div className="status-col-header status-col-header--np">
+                <span>○ Non pointés</span>
+                <span className="status-col-count">{notChecked}</span>
+              </div>
+              <div className="status-col-body">
+                {users.filter((u) => enrichedStatus(u, threshold, selectedDate) === 'non_pointe').map((user) => (
+                  <div key={user.user_id} className="status-col-agent">
+                    <div className="status-col-agent-info">
+                      <span className="agent-name">{user.username}</span>
+                      {user.profil && <span className="agent-profil">{profilLabel(user.profil)}</span>}
                     </div>
                   </div>
+                ))}
+                {notChecked === 0 && <div className="status-col-empty">—</div>}
+              </div>
+            </div>
 
-                  {/* Logs détaillés */}
-                  {expandedUser === user.user_id && user.logs.length > 0 && (
-                    <div className="agent-logs-expanded">
-                      {user.logs.map((log) => (
-                        <div key={log.id} className={`log-mini log-mini-${log.type}`}>
-                          <span className={`log-type-badge log-type-${log.type}`}>
-                            {log.type === 'in' ? '▶ ARRIVÉE' : '■ DÉPART'}
-                          </span>
-                          <span className="log-time">{formatTime(log.timestamp)}</span>
-                          {log.note && <span className="log-mini-note">{log.note}</span>}
-                          {log.ip_address && <span className="log-ip">{log.ip_address}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </React.Fragment>
-              ))
-            )}
           </div>
         )}
       </div>

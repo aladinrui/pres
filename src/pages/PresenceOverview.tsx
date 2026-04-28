@@ -330,6 +330,11 @@ const PresenceOverview: React.FC = () => {
                     const nConge     = vals.filter((s) => s === 'conge').length
                     const nNP        = vals.filter((s) => s === 'non_pointe').length
                     const pPres      = Math.round(nPres / total * 100)
+                    const pWork      = Math.round(((nPres + nPresLate) / total) * 100)
+                    const pRet       = Math.round((nRet / total) * 100)
+                    const pAbs       = Math.round((nAbs / total) * 100)
+                    const pConge     = Math.round((nConge / total) * 100)
+                    const pNP        = Math.round((nNP / total) * 100)
                     const bName  = BUREAU_NAMES[bureau_id] ?? `B${bureau_id}`
                     return (
                       <div key={bureau_id} className="bureau-chart-row">
@@ -342,10 +347,12 @@ const PresenceOverview: React.FC = () => {
                           <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nConge    / total * 100)}%`, background: '#818cf8' }} />
                           <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nNP       / total * 100)}%`, background: '#374151' }} />
                         </div>
-                        <span className="bureau-chart-pct">{pPres}%</span>
                         <span className="bureau-chart-detail">
-                          <span style={{ color: '#4ade80' }}>{nPres}</span>
-                          <span style={{ color: '#6b7280' }}>/{total}</span>
+                          <span className="bureau-chart-chip bureau-chart-chip--work"><span className="bureau-chart-chip-count">{nPres + nPresLate}</span><span className="bureau-chart-chip-pct">{pWork}%</span></span>
+                          <span className="bureau-chart-chip bureau-chart-chip--ret"><span className="bureau-chart-chip-count">{nRet}</span><span className="bureau-chart-chip-pct">{pRet}%</span></span>
+                          <span className="bureau-chart-chip bureau-chart-chip--abs"><span className="bureau-chart-chip-count">{nAbs}</span><span className="bureau-chart-chip-pct">{pAbs}%</span></span>
+                          <span className="bureau-chart-chip bureau-chart-chip--conge"><span className="bureau-chart-chip-count">{nConge}</span><span className="bureau-chart-chip-pct">{pConge}%</span></span>
+                          <span className="bureau-chart-chip bureau-chart-chip--np"><span className="bureau-chart-chip-count">{nNP}</span><span className="bureau-chart-chip-pct">{pNP}%</span></span>
                         </span>
                       </div>
                     )

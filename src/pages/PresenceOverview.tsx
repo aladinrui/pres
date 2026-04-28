@@ -35,6 +35,7 @@ const PROFIL_LABEL: Record<string, string> = {
   manager:     'M',
   cm:          'CM',
   crm_manager: 'CM',
+  'crm manager': 'CM',
 }
 function profilLabel(p: string | null | undefined) {
   if (!p) return null
@@ -110,7 +111,7 @@ const PresenceOverview: React.FC = () => {
 
   const username  = userDetail?.username ?? ''
   const profil    = (userDetail?.profil as string) ?? ''
-  const isAdmin   = profil === 'admin' || profil === 'superadmin' || username === 'Camille'
+  const isAdmin   = profil === 'admin' || profil === 'superadmin'
 
   const BUREAU_IDS_ALL = [3, 4, 5, 6, 7, 8, 9, 10]
 

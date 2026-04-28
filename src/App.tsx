@@ -9,8 +9,9 @@ import RequireAuth from './components/RequireAuth'
 import RequireRole from './components/RequireRole'
 import { useAppSelector } from './store/hooks'
 
-const MANAGER_ROLES = ['man', 'manager', 'admin', 'superadmin']
-const ADMIN_ROLES   = ['admin', 'superadmin']
+const MANAGER_ROLES    = ['man', 'manager', 'crm_manager', 'crm manager', 'admin', 'superadmin']
+const ADMIN_ROLES      = ['admin', 'superadmin']
+const DAY_ROLES        = ['man', 'manager', 'crm_manager', 'crm manager']
 
 const ManagerRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <RequireAuth>
@@ -18,10 +19,11 @@ const ManagerRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   </RequireAuth>
 )
 
-/** Redirige les admin/superadmin vers /manager, laisse passer les autres (pointage perso) */
+/** Redirige les admin/superadmin vers /manager, les managers vers /manager/day, laisse passer les autres (pointage perso) */
 const HomeRoute: React.FC = () => {
-  const profil = useAppSelector((s) => (s.user.userDetail?.profil as string | undefined) ?? '')
+  const profil = (useAppSelector((s) => s.user.userDetail?.profil as string | undefined) ?? '').toLowerCase()
   if (ADMIN_ROLES.includes(profil)) return <Navigate to="/manager" replace />
+  if (DAY_ROLES.includes(profil)) return <Navigate to="/manager/day" replace />
   return <Presence />
 }
 

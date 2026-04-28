@@ -54,6 +54,8 @@ const App: React.FC = () => {
   const [ipCheckStatus, setIpCheckStatus] = useState<IpCheckStatus>('pending')
 
   useEffect(() => {
+    // En développement local → pas de check IP
+    if (import.meta.env.DEV) { setIpCheckStatus('allowed'); return }
     let isMounted = true
     const verifyIp = async () => {
       try {

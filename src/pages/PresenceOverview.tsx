@@ -78,23 +78,27 @@ function isLateByTime(user: UserDay, threshold: string, date: string): boolean {
   return new Date(ci) > limit
 }
 
-type AlertKind = 'absent' | 'late-status' | 'late-time' | 'ok' | 'conge' | 'not-checked'
+type AlertKind = 'absent' | 'late-status' | 'late-time' | 'present-late' | 'ok' | 'conge' | 'not-checked'
 
 function getAlertKind(user: UserDay, threshold: string, date: string): AlertKind {
   if (user.status === 'conge') return 'conge'
   if (user.status === 'absent') return 'absent'
-  if (isLateByTime(user, threshold, date)) return 'late-time'
+  if (isLateByTime(user, threshold, date)) {
+    if (user.last_action === 'in' || user.status === 'present') return 'present-late'
+    return 'late-time'
+  }
   if (!user.last_action) return 'not-checked'
   return 'ok'
 }
 
 const KIND_META: Record<AlertKind, { label: string; color: string; priority: number }> = {
-  absent:       { label: 'Absent',        color: '#ef4444', priority: 1 },
-  'late-status':{ label: 'Partiel/Retard',color: '#f59e0b', priority: 2 },
-  'late-time':  { label: 'En retard',     color: '#fb923c', priority: 3 },
-  'not-checked':{ label: 'Pas pointé',    color: '#6b7280', priority: 4 },
-  conge:        { label: 'Congé',         color: '#818cf8', priority: 5 },
-  ok:           { label: 'OK',            color: '#22c55e', priority: 6 },
+  absent:         { label: 'Absent',              color: '#ef4444', priority: 1 },
+  'late-status':  { label: 'Partiel/Retard',      color: '#f59e0b', priority: 2 },
+  'late-time':    { label: 'En retard',            color: '#fb923c', priority: 3 },
+  'present-late': { label: 'Présent / En retard', color: '#f59e0b', priority: 3 },
+  'not-checked':  { label: 'Pas pointé',           color: '#6b7280', priority: 4 },
+  conge:          { label: 'Congé',                color: '#818cf8', priority: 5 },
+  ok:             { label: 'OK',                   color: '#22c55e', priority: 6 },
 }
 
 const ALERT_STATUS: Record<string, { label: string; color: string }> = {
@@ -177,7 +181,7 @@ const PresenceOverview: React.FC = () => {
     ? sorted.filter((u) => { const k = getAlertKind(u, threshold, selectedDate); return k !== 'ok' && k !== 'conge' })
     : sorted
   const cAbsent  = users.filter((u) => getAlertKind(u, threshold, selectedDate) === 'absent').length
-  const cLate    = users.filter((u) => ['late-status','late-time'].includes(getAlertKind(u, threshold, selectedDate))).length
+  const cLate    = users.filter((u) => ['late-status','late-time','present-late'].includes(getAlertKind(u, threshold, selectedDate))).length
   const cOk      = users.filter((u) => getAlertKind(u, threshold, selectedDate) === 'ok').length
   const cNoCheck = users.filter((u) => getAlertKind(u, threshold, selectedDate) === 'not-checked').length
 
@@ -272,16 +276,19 @@ const PresenceOverview: React.FC = () => {
                     const total   = agents.length
                     if (total === 0) return null
                     const today = todayISO()
-                    type ES = 'non_pointe' | 'absent' | 'retard' | 'present' | 'conge'
+                    type ES = 'non_pointe' | 'absent' | 'retard' | 'present-late' | 'present' | 'conge'
                     const sm = new Map<number, ES>()
                     bAlerts.forEach((a) => { if (a.status === 'non_pointe' || a.status === 'absent') sm.set(a.user_id, a.status) })
                     agents.forEach((ag) => {
-                      if (ag.status === 'conge')                                   { sm.set(ag.user_id, 'conge');     return }
+                      if (ag.status === 'conge')                                   { sm.set(ag.user_id, 'conge');        return }
                       if (sm.get(ag.user_id) === 'absent')                         return
-                      // En service = priorité absolue (peu importe l'heure d'arrivée)
-                      if (ag.last_action === 'in' || ag.status === 'present')      { sm.set(ag.user_id, 'present');   return }
-                      // Retard = a un checkin tardif mais plus en service (sorti)
-                      if (isLateByTime(ag, threshold, today))                      { sm.set(ag.user_id, 'retard');    return }
+                      if (ag.last_action === 'in' || ag.status === 'present') {
+                        // Présent mais en retard
+                        if (isLateByTime(ag, threshold, today))                    { sm.set(ag.user_id, 'present-late'); return }
+                        sm.set(ag.user_id, 'present'); return
+                      }
+                      // Retard = checkin tardif mais sorti
+                      if (isLateByTime(ag, threshold, today))                      { sm.set(ag.user_id, 'retard');       return }
                       if (!sm.has(ag.user_id))                                     sm.set(ag.user_id, 'non_pointe')
                     })
                     const vals   = [...sm.values()]
@@ -339,7 +346,7 @@ const PresenceOverview: React.FC = () => {
                   const nbAbs = bAlerts.filter((a) => a.status === 'absent').length
 
                   // Map user_id → statut enrichi : alerte API prioritaire, puis détection locale complète
-                  type EnrichedStatus = 'non_pointe' | 'absent' | 'retard' | 'present' | 'conge'
+                  type EnrichedStatus = 'non_pointe' | 'absent' | 'retard' | 'present-late' | 'present' | 'conge'
                   const statusMap = new Map<number, EnrichedStatus>()
 
                   // 1. NP et Absent depuis API (source de vérité pour ces deux)
@@ -351,23 +358,26 @@ const PresenceOverview: React.FC = () => {
                   // 2. Enrichissement local — en service = priorité absolue
                   const today = todayISO()
                   rawAgents.forEach((ag) => {
-                    if (ag.status === 'conge')                              { statusMap.set(ag.user_id, 'conge');     return }
+                    if (ag.status === 'conge')                              { statusMap.set(ag.user_id, 'conge');        return }
                     if (statusMap.get(ag.user_id) === 'absent')            return // absent API conservé
-                    // En service → présent, peu importe l'heure d'arrivée
-                    if (ag.last_action === 'in' || ag.status === 'present') { statusMap.set(ag.user_id, 'present');   return }
-                    // Retard = checkin tardif mais plus en service
-                    if (isLateByTime(ag, threshold, today))                 { statusMap.set(ag.user_id, 'retard');    return }
+                    if (ag.last_action === 'in' || ag.status === 'present') {
+                      // Présent mais en retard
+                      if (isLateByTime(ag, threshold, today))               { statusMap.set(ag.user_id, 'present-late'); return }
+                      statusMap.set(ag.user_id, 'present'); return
+                    }
+                    // Retard = checkin tardif mais sorti
+                    if (isLateByTime(ag, threshold, today))                 { statusMap.set(ag.user_id, 'retard');       return }
                     if (!statusMap.has(ag.user_id))                         statusMap.set(ag.user_id, 'non_pointe')
                   })
 
-                  const nbRet   = [...statusMap.values()].filter((s) => s === 'retard').length
+                  const nbRet   = [...statusMap.values()].filter((s) => s === 'retard' || s === 'present-late').length
                   const nbPres  = [...statusMap.values()].filter((s) => s === 'present').length
                   const nbConge = [...statusMap.values()].filter((s) => s === 'conge').length
                   const hasIssues = nbNP + nbAbs + nbRet > 0
 
                   const npIds   = new Set([...statusMap.entries()].filter(([,s]) => s === 'non_pointe').map(([id]) => id))
                   const absIds  = new Set([...statusMap.entries()].filter(([,s]) => s === 'absent').map(([id]) => id))
-                  const retIds  = new Set([...statusMap.entries()].filter(([,s]) => s === 'retard').map(([id]) => id))
+                  const retIds  = new Set([...statusMap.entries()].filter(([,s]) => s === 'retard' || s === 'present-late').map(([id]) => id))
 
                   const fullAgents = activeFilter === 'all'        ? rawAgents
                     : activeFilter === 'non_pointe' ? rawAgents.filter((ag) => npIds.has(ag.user_id))
@@ -479,14 +489,13 @@ const PresenceOverview: React.FC = () => {
                                 .map((agent) => {
                                   const agStatus = statusMap.get(agent.user_id) ?? 'present'
                                   const ci = firstCheckin(agent)
-                                  const isLatePresent = agStatus === 'retard' && ci !== null
                                   const sm: { label: string; color: string } =
-                                    isLatePresent            ? { label: 'Présent / En retard', color: '#f59e0b' } :
-                                    agStatus === 'retard'    ? { label: 'En retard',           color: '#f59e0b' } :
-                                    agStatus === 'absent'    ? { label: 'Absent',               color: '#ef4444' } :
-                                    agStatus === 'non_pointe'? { label: 'Pas pointé',           color: '#6b7280' } :
-                                    agStatus === 'conge'     ? { label: 'Congé',                color: '#818cf8' } :
-                                                               { label: 'Présent',              color: '#22c55e' }
+                                    agStatus === 'present-late' ? { label: 'Présent / En retard', color: '#f59e0b' } :
+                                    agStatus === 'retard'       ? { label: 'En retard',            color: '#fb923c' } :
+                                    agStatus === 'absent'       ? { label: 'Absent',                color: '#ef4444' } :
+                                    agStatus === 'non_pointe'   ? { label: 'Pas pointé',            color: '#6b7280' } :
+                                    agStatus === 'conge'        ? { label: 'Congé',                 color: '#818cf8' } :
+                                                                  { label: 'Présent',               color: '#22c55e' }
                                   return (
                                     <div key={agent.user_id} className="bureau-full-row">
                                       <div className="agent-info-line">
@@ -637,7 +646,7 @@ const PresenceOverview: React.FC = () => {
                   const kind = getAlertKind(user, threshold, selectedDate)
                   const meta = KIND_META[kind]
                   const ci   = firstCheckin(user)
-                  const isIssue = kind === 'absent' || kind === 'late-status' || kind === 'late-time'
+                  const isIssue = kind === 'absent' || kind === 'late-status' || kind === 'late-time' || kind === 'present-late'
                   return (
                     <div key={user.user_id} className={`overview-card ${isIssue ? 'overview-card--issue' : ''}`} style={{ '--card-color': meta.color } as React.CSSProperties}>
                       <div className="overview-card-bar" />

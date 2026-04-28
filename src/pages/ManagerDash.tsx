@@ -478,7 +478,7 @@ const ManagerDash: React.FC = () => {
               </div>
               <div className="status-col-body">
                 {users.filter((u) => ['absent','conge'].includes(enrichedStatus(u, threshold, selectedDate))).map((user) => {
-                  const es = enrichedStatus(u, threshold, selectedDate)
+                  const es = enrichedStatus(user, threshold, selectedDate)
                   return (
                     <div key={user.user_id} className="status-col-agent" onClick={() => openEdit(user, selectedDate)} style={{ cursor: 'pointer' }}>
                       <div className="status-col-agent-info">

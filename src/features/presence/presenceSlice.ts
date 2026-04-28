@@ -41,14 +41,22 @@ export type AlertAgent = {
   username: string
   bureau_id: number
   profil: string | null
-  status: 'non_pointe' | 'absent' | 'retard'
+  status: 'non_pointe' | 'absent' | 'retard' | 'conge'
   note: string | null
   updated_at: string | null
+  checkin_time: string | null   // ex: "10:32:00" — heure réelle d'arrivée
+  schedule_start: string | null // ex: "09:00:00" — heure prévue
 }
 export type AlertsResponse = {
   date: string
   bureau_id: number | null
   total: number
+  counts?: {
+    non_pointe?: number
+    retard?: number
+    absent?: number
+    conge?: number
+  }
   agents: AlertAgent[]
 }
 

@@ -64,26 +64,40 @@ function formatTime(iso: string) {
   return addOffset(new Date(iso)).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
 }
 
+/** Formate "HH:MM:SS" en "HH:MM" */
+function formatHHMM(t: string | null | undefined): string | null {
+  if (!t) return null
+  return t.slice(0, 5)
+}
+
+/** Compare "HH:MM:SS" au seuil "HH:MM" — retourne true si l'heure dépasse le seuil */
+function isCheckinLate(checkinTime: string | null | undefined, threshold: string): boolean {
+  if (!checkinTime) return false
+  return checkinTime.slice(0, 5) > threshold
+}
+
 /** Retourne l'heure du 1er pointage IN, ou null */
 function firstCheckin(user: UserDay): string | null {
   const ins = user.logs.filter((l) => l.type === 'in').sort((a, b) => a.timestamp.localeCompare(b.timestamp))
   return ins.length > 0 ? ins[0].timestamp : null
 }
 
-/** true si l'heure de premier IN dépasse le seuil hh:mm */
-function isLateByTime(user: UserDay, threshold: string, date: string): boolean {
+/** true si l'heure de premier IN dépasse le seuil hh:mm (comparaison en heure locale affichée) */
+function isLateByTime(user: UserDay, threshold: string): boolean {
   const ci = firstCheckin(user)
   if (!ci) return false
-  const limit = new Date(`${date}T${threshold}:00`)
-  return new Date(ci) > limit
+  // Convertir en heure locale (même logique que l'affichage)
+  const localTime = addOffset(new Date(ci))
+  const hhmm = localTime.toISOString().slice(11, 16) // "HH:MM" en UTC décalé = heure locale
+  return hhmm > threshold
 }
 
 type AlertKind = 'absent' | 'late-status' | 'late-time' | 'present-late' | 'ok' | 'conge' | 'not-checked'
 
-function getAlertKind(user: UserDay, threshold: string, date: string): AlertKind {
+function getAlertKind(user: UserDay, threshold: string, _date?: string): AlertKind {
   if (user.status === 'conge') return 'conge'
   if (user.status === 'absent') return 'absent'
-  if (isLateByTime(user, threshold, date)) {
+  if (isLateByTime(user, threshold)) {
     if (user.last_action === 'in' || user.status === 'present') return 'present-late'
     return 'late-time'
   }
@@ -278,36 +292,48 @@ const PresenceOverview: React.FC = () => {
                     const today = todayISO()
                     type ES = 'non_pointe' | 'absent' | 'retard' | 'present-late' | 'present' | 'conge'
                     const sm = new Map<number, ES>()
-                    bAlerts.forEach((a) => { if (a.status === 'non_pointe' || a.status === 'absent') sm.set(a.user_id, a.status) })
+                    // Construire map checkin_time depuis les alertes
+                    const alertCheckinMap = new Map<number, string | null>()
+                    bAlerts.forEach((a) => {
+                      alertCheckinMap.set(a.user_id, a.checkin_time ?? null)
+                      if (a.status === 'non_pointe' || a.status === 'absent') sm.set(a.user_id, a.status)
+                      if (a.status === 'conge') sm.set(a.user_id, 'conge')
+                    })
                     agents.forEach((ag) => {
-                      if (ag.status === 'conge')                                   { sm.set(ag.user_id, 'conge');        return }
-                      if (sm.get(ag.user_id) === 'absent')                         return
+                      if (ag.status === 'conge')                  { sm.set(ag.user_id, 'conge'); return }
+                      if (sm.get(ag.user_id) === 'absent')        return
                       if (ag.last_action === 'in' || ag.status === 'present') {
-                        // Présent mais en retard
-                        if (isLateByTime(ag, threshold, today))                    { sm.set(ag.user_id, 'present-late'); return }
+                        const ct = alertCheckinMap.get(ag.user_id) ?? null
+                        // Utiliser checkin_time de l'alerte si dispo, sinon fallback isLateByTime
+                        const late = ct ? isCheckinLate(ct, threshold) : isLateByTime(ag, threshold)
+                        if (late) { sm.set(ag.user_id, 'present-late'); return }
                         sm.set(ag.user_id, 'present'); return
                       }
-                      // Retard = checkin tardif mais sorti
-                      if (isLateByTime(ag, threshold, today))                      { sm.set(ag.user_id, 'retard');       return }
-                      if (!sm.has(ag.user_id))                                     sm.set(ag.user_id, 'non_pointe')
+                      // Sorti — vérifier retard via checkin_time ou logs
+                      const ct = alertCheckinMap.get(ag.user_id) ?? null
+                      const late = ct ? isCheckinLate(ct, threshold) : isLateByTime(ag, threshold)
+                      if (late) { sm.set(ag.user_id, 'retard'); return }
+                      if (!sm.has(ag.user_id)) sm.set(ag.user_id, 'non_pointe')
                     })
-                    const vals   = [...sm.values()]
-                    const nPres  = vals.filter((s) => s === 'present').length
-                    const nRet   = vals.filter((s) => s === 'retard').length
-                    const nAbs   = vals.filter((s) => s === 'absent').length
-                    const nConge = vals.filter((s) => s === 'conge').length
-                    const nNP    = vals.filter((s) => s === 'non_pointe').length
-                    const pPres  = Math.round(nPres / total * 100)
+                    const vals       = [...sm.values()]
+                    const nPres      = vals.filter((s) => s === 'present').length
+                    const nPresLate  = vals.filter((s) => s === 'present-late').length
+                    const nRet       = vals.filter((s) => s === 'retard').length
+                    const nAbs       = vals.filter((s) => s === 'absent').length
+                    const nConge     = vals.filter((s) => s === 'conge').length
+                    const nNP        = vals.filter((s) => s === 'non_pointe').length
+                    const pPres      = Math.round(nPres / total * 100)
                     const bName  = BUREAU_NAMES[bureau_id] ?? `B${bureau_id}`
                     return (
                       <div key={bureau_id} className="bureau-chart-row">
                         <span className="bureau-chart-label">{bName}</span>
                         <div className="bureau-chart-bar-track">
-                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nPres  / total * 100)}%`, background: '#22c55e' }} />
-                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nRet   / total * 100)}%`, background: '#f59e0b' }} />
-                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nAbs   / total * 100)}%`, background: '#ef4444' }} />
-                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nConge / total * 100)}%`, background: '#818cf8' }} />
-                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nNP    / total * 100)}%`, background: '#374151' }} />
+                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nPres     / total * 100)}%`, background: '#22c55e' }} />
+                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nPresLate / total * 100)}%`, background: '#f59e0b', opacity: 0.7 }} />
+                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nRet      / total * 100)}%`, background: '#fb923c' }} />
+                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nAbs      / total * 100)}%`, background: '#ef4444' }} />
+                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nConge    / total * 100)}%`, background: '#818cf8' }} />
+                          <div className="bureau-chart-bar-seg" style={{ width: `${Math.round(nNP       / total * 100)}%`, background: '#374151' }} />
                         </div>
                         <span className="bureau-chart-pct">{pPres}%</span>
                         <span className="bureau-chart-detail">
@@ -320,7 +346,8 @@ const PresenceOverview: React.FC = () => {
                 </div>
                 <div className="bureau-chart-legend">
                   <span className="bureau-chart-legend-item"><i style={{ background: '#22c55e' }} />Présent</span>
-                  <span className="bureau-chart-legend-item"><i style={{ background: '#f59e0b' }} />Retard</span>
+                  <span className="bureau-chart-legend-item"><i style={{ background: '#f59e0b', opacity: 0.7 }} />Prés/Retard</span>
+                  <span className="bureau-chart-legend-item"><i style={{ background: '#fb923c' }} />Retard</span>
                   <span className="bureau-chart-legend-item"><i style={{ background: '#ef4444' }} />Absent</span>
                   <span className="bureau-chart-legend-item"><i style={{ background: '#818cf8' }} />Congé</span>
                   <span className="bureau-chart-legend-item"><i style={{ background: '#374151' }} />NP</span>
@@ -349,24 +376,30 @@ const PresenceOverview: React.FC = () => {
                   type EnrichedStatus = 'non_pointe' | 'absent' | 'retard' | 'present-late' | 'present' | 'conge'
                   const statusMap = new Map<number, EnrichedStatus>()
 
-                  // 1. NP et Absent depuis API (source de vérité pour ces deux)
+                  // 1. NP, Absent, Congé depuis API
                   bAlerts.forEach((a) => {
-                    if (a.status === 'non_pointe' || a.status === 'absent')
+                    if (a.status === 'non_pointe' || a.status === 'absent' || a.status === 'conge')
                       statusMap.set(a.user_id, a.status)
                   })
 
-                  // 2. Enrichissement local — en service = priorité absolue
+                  // Map checkin_time depuis alertes
+                  const alertCheckinMap = new Map<number, string | null>()
+                  bAlerts.forEach((a) => alertCheckinMap.set(a.user_id, a.checkin_time ?? null))
+
+                  // 2. Enrichissement local
                   const today = todayISO()
                   rawAgents.forEach((ag) => {
                     if (ag.status === 'conge')                              { statusMap.set(ag.user_id, 'conge');        return }
-                    if (statusMap.get(ag.user_id) === 'absent')            return // absent API conservé
+                    if (statusMap.get(ag.user_id) === 'absent')            return
                     if (ag.last_action === 'in' || ag.status === 'present') {
-                      // Présent mais en retard
-                      if (isLateByTime(ag, threshold, today))               { statusMap.set(ag.user_id, 'present-late'); return }
+                      const ct = alertCheckinMap.get(ag.user_id) ?? null
+                      const late = ct ? isCheckinLate(ct, threshold) : isLateByTime(ag, threshold)
+                      if (late)                                              { statusMap.set(ag.user_id, 'present-late'); return }
                       statusMap.set(ag.user_id, 'present'); return
                     }
-                    // Retard = checkin tardif mais sorti
-                    if (isLateByTime(ag, threshold, today))                 { statusMap.set(ag.user_id, 'retard');       return }
+                    const ct = alertCheckinMap.get(ag.user_id) ?? null
+                    const late = ct ? isCheckinLate(ct, threshold) : isLateByTime(ag, threshold)
+                    if (late)                                                { statusMap.set(ag.user_id, 'retard');       return }
                     if (!statusMap.has(ag.user_id))                         statusMap.set(ag.user_id, 'non_pointe')
                   })
 
@@ -481,21 +514,32 @@ const PresenceOverview: React.FC = () => {
                               )}
                               {[...displayedAgents]
                                 .sort((a, b) => {
-                                  const order: Record<string, number> = { absent: 0, retard: 1, conge: 2, non_pointe: 3, present: 4 }
+                                  const order: Record<string, number> = { absent: 0, retard: 1, 'present-late': 2, non_pointe: 3, conge: 4, present: 5 }
                                   const sa = statusMap.get(a.user_id) ?? 'present'
                                   const sb = statusMap.get(b.user_id) ?? 'present'
-                                  return (order[sa] ?? 5) - (order[sb] ?? 5)
+                                  return (order[sa] ?? 6) - (order[sb] ?? 6)
                                 })
                                 .map((agent) => {
                                   const agStatus = statusMap.get(agent.user_id) ?? 'present'
                                   const ci = firstCheckin(agent)
+                                  // Récupérer checkin_time et schedule_start depuis l'alerte
+                                  const alertData = bAlerts.find((a) => a.user_id === agent.user_id)
+                                  const checkinDisplay = alertData?.checkin_time
+                                    ? formatHHMM(alertData.checkin_time)
+                                    : ci ? formatTime(ci) : null
+                                  const scheduleDisplay = formatHHMM(alertData?.schedule_start)
+                                  // Forcer present-late au render si présent et checkin tardif
+                                  const effectiveStatus = (agStatus === 'present' && (
+                                    alertData?.checkin_time ? isCheckinLate(alertData.checkin_time, threshold)
+                                      : (ci ? isLateByTime(agent, threshold) : false)
+                                  )) ? 'present-late' : agStatus
                                   const sm: { label: string; color: string } =
-                                    agStatus === 'present-late' ? { label: 'Présent / En retard', color: '#f59e0b' } :
-                                    agStatus === 'retard'       ? { label: 'En retard',            color: '#fb923c' } :
-                                    agStatus === 'absent'       ? { label: 'Absent',                color: '#ef4444' } :
-                                    agStatus === 'non_pointe'   ? { label: 'Pas pointé',            color: '#6b7280' } :
-                                    agStatus === 'conge'        ? { label: 'Congé',                 color: '#818cf8' } :
-                                                                  { label: 'Présent',               color: '#22c55e' }
+                                    effectiveStatus === 'present-late' ? { label: 'Présent / En retard', color: '#f59e0b' } :
+                                    effectiveStatus === 'retard'       ? { label: 'En retard',            color: '#fb923c' } :
+                                    effectiveStatus === 'absent'       ? { label: 'Absent',                color: '#ef4444' } :
+                                    effectiveStatus === 'non_pointe'   ? { label: 'Pas pointé',            color: '#6b7280' } :
+                                    effectiveStatus === 'conge'        ? { label: 'Congé',                 color: '#818cf8' } :
+                                                                         { label: 'Présent',               color: '#22c55e' }
                                   return (
                                     <div key={agent.user_id} className="bureau-full-row">
                                       <div className="agent-info-line">
@@ -513,8 +557,15 @@ const PresenceOverview: React.FC = () => {
                                         </span>
                                       </div>
                                       <div>
-                                        {ci
-                                          ? <span className="alerts-time">▶ {formatTime(ci)}</span>
+                                        {checkinDisplay
+                                          ? (
+                                            <span className="alerts-time">
+                                              ▶ {checkinDisplay}
+                                              {scheduleDisplay && (effectiveStatus === 'present-late' || effectiveStatus === 'retard') && (
+                                                <span style={{ color: '#6b7280', fontSize: '0.75em', marginLeft: '0.4em' }}>prévu {scheduleDisplay}</span>
+                                              )}
+                                            </span>
+                                          )
                                           : <span className="note-preview-empty">—</span>}
                                       </div>
                                       <div>

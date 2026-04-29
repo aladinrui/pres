@@ -94,15 +94,15 @@ function formatDateFR(iso: string): string {
   return `${JOURS[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]} ${d.getFullYear()}`
 }
 
-function addOffset(d: Date): Date { return new Date(d.getTime() - 3 * 60 * 60 * 1000) }
-
-function parseUTC(ts: string): Date {
-  return new Date(ts.replace(' ', 'T').replace(/([^Z])$/, '$1Z'))
+function plus3HoursHHMM(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number)
+  const minutes = (h * 60 + m + 180) % (24 * 60)
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
 }
 
 function formatTime(iso: string): string {
-  // Timestamps already stored in local time — read HH:MM directly
-  return iso.slice(11, 16)
+  const hhmm = iso.slice(11, 16)
+  return plus3HoursHHMM(hhmm)
 }
 
 /** Retourne le décalage entre une heure "HH:MM" et le seuil "HH:MM", ex: "+45min" ou "+1h15" */
@@ -121,7 +121,7 @@ function formatDelay(timeHHMM: string, threshold: string): string {
 function addDays(iso: string, n: number): string {
   const d = new Date(iso + 'T00:00:00')
   d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function firstCheckin(user: UserDay): string | null {
@@ -132,8 +132,7 @@ function firstCheckin(user: UserDay): string | null {
 function isLate(user: UserDay, threshold: string, _date: string): boolean {
   const ci = firstCheckin(user)
   if (!ci) return false
-  // Timestamps already stored in local time — compare HH:MM directly
-  const hhmm = ci.slice(11, 16)
+  const hhmm = plus3HoursHHMM(ci.slice(11, 16))
   return hhmm > threshold
 }
 

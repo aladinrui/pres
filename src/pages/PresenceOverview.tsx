@@ -45,12 +45,15 @@ function profilLabel(p: string | null | undefined) {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function todayISO() { return new Date().toISOString().slice(0, 10) }
+function todayISO() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 function addDays(iso: string, n: number) {
   const d = new Date(iso + 'T00:00:00')
   d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function formatDateFR(iso: string) {
@@ -58,31 +61,26 @@ function formatDateFR(iso: string) {
   return `${JOURS[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]} ${d.getFullYear()}`
 }
 
-function addOffset(d: Date): Date { return new Date(d.getTime() + 3 * 60 * 60 * 1000) }
-
-/** Force UTC parsing d'un timestamp ISO/MySQL — "2026-04-28 07:15:22" → Date UTC */
-function parseUTC(ts: string): Date {
-  return new Date(ts.replace(' ', 'T').replace(/([^Z])$/, '$1Z'))
+function plus3HoursHHMM(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number)
+  const minutes = (h * 60 + m + 180) % (24 * 60)
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
 }
 
 function formatTime(iso: string) {
-  // Timestamps already stored in local time — read HH:MM directly
-  return iso.slice(11, 16)
+  return plus3HoursHHMM(iso.slice(11, 16))
 }
 
 /** Formate "HH:MM:SS" en "HH:MM" */
 function formatHHMM(t: string | null | undefined): string | null {
   if (!t) return null
-  return t.slice(0, 5)
+  return plus3HoursHHMM(t.slice(0, 5))
 }
 
 /** Compare "HH:MM:SS" UTC au seuil "HH:MM" local — applique +3h avant comparaison */
 function isCheckinLate(checkinTime: string | null | undefined, threshold: string): boolean {
   if (!checkinTime) return false
-  const [h, m] = checkinTime.split(':').map(Number)
-  const localMinutes = (h * 60 + m + 180) % (24 * 60) // UTC → +3h local
-  const localHHMM = `${String(Math.floor(localMinutes / 60)).padStart(2, '0')}:${String(localMinutes % 60).padStart(2, '0')}`
-  return localHHMM > threshold
+  return plus3HoursHHMM(checkinTime.slice(0, 5)) > threshold
 }
 
 /** Retourne l'heure du 1er pointage IN, ou null */
@@ -95,8 +93,7 @@ function firstCheckin(user: UserDay): string | null {
 function isLateByTime(user: UserDay, threshold: string): boolean {
   const ci = firstCheckin(user)
   if (!ci) return false
-  // Timestamps already stored in local time — compare HH:MM directly
-  return ci.slice(11, 16) > threshold
+  return plus3HoursHHMM(ci.slice(11, 16)) > threshold
 }
 
 type AlertKind = 'absent' | 'late-status' | 'late-time' | 'present-late' | 'ok' | 'conge' | 'not-checked'
@@ -562,7 +559,7 @@ const PresenceOverview: React.FC = () => {
                                   const checkinDisplay = alertData?.checkin_time
                                     ? formatHHMM(alertData.checkin_time)
                                     : ci ? formatTime(ci)
-                                    : alertData?.updated_at ? alertData.updated_at.slice(11, 16)
+                                    : alertData?.updated_at ? formatTime(alertData.updated_at)
                                     : null
                                   const scheduleDisplay = formatHHMM(alertData?.schedule_start)
                                   // Forcer present-late au render si présent et checkin tardif

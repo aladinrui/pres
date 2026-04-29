@@ -66,7 +66,8 @@ function parseUTC(ts: string): Date {
 }
 
 function formatTime(iso: string) {
-  return addOffset(parseUTC(iso)).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  // Timestamps already stored in local time — read HH:MM directly
+  return iso.slice(11, 16)
 }
 
 /** Formate "HH:MM:SS" en "HH:MM" */
@@ -94,9 +95,8 @@ function firstCheckin(user: UserDay): string | null {
 function isLateByTime(user: UserDay, threshold: string): boolean {
   const ci = firstCheckin(user)
   if (!ci) return false
-  const localTime = addOffset(parseUTC(ci))
-  const hhmm = localTime.toISOString().slice(11, 16)
-  return hhmm > threshold
+  // Timestamps already stored in local time — compare HH:MM directly
+  return ci.slice(11, 16) > threshold
 }
 
 type AlertKind = 'absent' | 'late-status' | 'late-time' | 'present-late' | 'ok' | 'conge' | 'not-checked'
@@ -104,6 +104,7 @@ type AlertKind = 'absent' | 'late-status' | 'late-time' | 'present-late' | 'ok' 
 function getAlertKind(user: UserDay, threshold: string, _date?: string): AlertKind {
   if (user.status === 'conge') return 'conge'
   if (user.status === 'absent') return 'absent'
+  if ((user.status as string) === 'retard') return 'late-status'
   if (isLateByTime(user, threshold)) {
     if (user.last_action === 'in' || user.status === 'present') return 'present-late'
     return 'late-time'
@@ -307,6 +308,7 @@ const PresenceOverview: React.FC = () => {
                     })
                     agents.forEach((ag) => {
                       if (ag.status === 'conge')                  { sm.set(ag.user_id, 'conge'); return }
+                      if ((ag.status as string) === 'retard')     { sm.set(ag.user_id, 'retard'); return }
                       if (sm.get(ag.user_id) === 'absent')        return
                       if (ag.last_action === 'in' || ag.status === 'present') {
                         const ct = alertCheckinMap.get(ag.user_id) ?? null
@@ -403,6 +405,7 @@ const PresenceOverview: React.FC = () => {
                   const today = todayISO()
                   rawAgents.forEach((ag) => {
                     if (ag.status === 'conge')                              { statusMap.set(ag.user_id, 'conge');        return }
+                    if ((ag.status as string) === 'retard')                 { statusMap.set(ag.user_id, 'retard');       return }
                     if (statusMap.get(ag.user_id) === 'absent')            return
                     if (ag.last_action === 'in' || ag.status === 'present') {
                       const ct = alertCheckinMap.get(ag.user_id) ?? null
@@ -558,7 +561,9 @@ const PresenceOverview: React.FC = () => {
                                   const alertData = bAlerts.find((a) => a.user_id === agent.user_id)
                                   const checkinDisplay = alertData?.checkin_time
                                     ? formatHHMM(alertData.checkin_time)
-                                    : ci ? formatTime(ci) : null
+                                    : ci ? formatTime(ci)
+                                    : alertData?.updated_at ? alertData.updated_at.slice(11, 16)
+                                    : null
                                   const scheduleDisplay = formatHHMM(alertData?.schedule_start)
                                   // Forcer present-late au render si présent et checkin tardif
                                   const effectiveStatus = (agStatus === 'present' && (

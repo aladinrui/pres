@@ -54,7 +54,7 @@ type UserDay = {
   user_id: number
   username: string
   profil?: string
-  status: 'present' | 'absent' | 'partial' | 'conge' | null
+  status: 'present' | 'absent' | 'partial' | 'retard' | 'conge' | null
   note: string | null
   daily_id: number | null
   logs: PresenceLog[]
@@ -73,9 +73,12 @@ type BureauDayResponse = {
   days: DayEntry[]
 }
 
-const STATUS_OPTIONS: { value: UserDay['status']; label: string; color: string }[] = [
+type ApiStatus = UserDay['status'] | 'retard'
+type UiStatus = Exclude<ApiStatus, 'partial'>
+
+const STATUS_OPTIONS: { value: UiStatus; label: string; color: string }[] = [
   { value: 'absent',  label: 'Absent',   color: '#ef4444' },
-  { value: 'partial', label: 'Partiel',  color: '#f59e0b' },
+  { value: 'retard',  label: 'Retard',   color: '#fb923c' },
   { value: 'conge',   label: 'Congé',    color: '#818cf8' },
 ]
 
@@ -91,17 +94,15 @@ function formatDateFR(iso: string): string {
   return `${JOURS[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]} ${d.getFullYear()}`
 }
 
-function addOffset(d: Date): Date { return new Date(d.getTime() + 3 * 60 * 60 * 1000) }
+function addOffset(d: Date): Date { return new Date(d.getTime() - 3 * 60 * 60 * 1000) }
 
 function parseUTC(ts: string): Date {
   return new Date(ts.replace(' ', 'T').replace(/([^Z])$/, '$1Z'))
 }
 
 function formatTime(iso: string): string {
-  // addOffset shifts UTC to local, toISOString reads the shifted UTC value directly
-  // Avoids double-offset from toLocaleTimeString in UTC+3 browsers
-  const shifted = addOffset(parseUTC(iso))
-  return shifted.toISOString().slice(11, 16)
+  // Timestamps already stored in local time — read HH:MM directly
+  return iso.slice(11, 16)
 }
 
 /** Retourne le décalage entre une heure "HH:MM" et le seuil "HH:MM", ex: "+45min" ou "+1h15" */
@@ -131,15 +132,16 @@ function firstCheckin(user: UserDay): string | null {
 function isLate(user: UserDay, threshold: string, _date: string): boolean {
   const ci = firstCheckin(user)
   if (!ci) return false
-  const localTime = addOffset(parseUTC(ci))
-  const hhmm = localTime.toISOString().slice(11, 16)
+  // Timestamps already stored in local time — compare HH:MM directly
+  const hhmm = ci.slice(11, 16)
   return hhmm > threshold
 }
 
 /** Retourne le statut enrichi pour un agent */
-function enrichedStatus(user: UserDay, threshold: string, date: string): 'present' | 'present_late' | 'absent' | 'non_pointe' | 'conge' {
+function enrichedStatus(user: UserDay, threshold: string, date: string): 'present' | 'present_late' | 'retard' | 'absent' | 'non_pointe' | 'conge' {
   if (user.status === 'absent') return 'absent'
   if (user.status === 'conge')  return 'conge'
+  if (user.status === 'retard') return 'retard'
   if (isLate(user, threshold, date)) return 'present_late'
   if (user.last_action === 'in' || user.status === 'present') return 'present'
   return 'non_pointe'
@@ -172,7 +174,7 @@ const ManagerDash: React.FC = () => {
   const [editingUser, setEditingUser] = useState<UserDay | null>(null)
   const [editingDate, setEditingDate] = useState<string>('')
   const [noteDraft, setNoteDraft] = useState('')
-  const [statusDraft, setStatusDraft] = useState<UserDay['status']>(null)
+  const [statusDraft, setStatusDraft] = useState<UiStatus>(null)
   const [saving, setSaving] = useState(false)
 
   // Modal renommage
@@ -215,7 +217,7 @@ const ManagerDash: React.FC = () => {
     setEditingUser(user)
     setEditingDate(date)
     setNoteDraft(user.note ?? '')
-    setStatusDraft(user.status ?? null)
+    setStatusDraft((user.status === 'partial' ? 'retard' : user.status) as UiStatus)
   }
 
   const closeEdit = () => {
@@ -229,10 +231,11 @@ const ManagerDash: React.FC = () => {
     if (!editingUser) return
     setSaving(true)
     try {
+      const apiStatus: ApiStatus = statusDraft
       if (editingUser.daily_id) {
         await axios.patch(`${API}/presence/daily/${editingUser.daily_id}/note`, {
           note: noteDraft.trim() || null,
-          status: statusDraft,
+          status: apiStatus,
         })
       } else {
         await axios.post(`${API}/presence/daily`, {
@@ -241,7 +244,7 @@ const ManagerDash: React.FC = () => {
           bureau_id: bureauId,
           profil: editingUser.profil ?? '',
           date: editingDate,
-          status: statusDraft ?? 'absent',
+          status: apiStatus ?? 'absent',
           note: noteDraft.trim() || null,
         })
       }
@@ -287,7 +290,7 @@ const ManagerDash: React.FC = () => {
   const currentDay: DayEntry | null = data?.days?.[0] ?? null
   const users: UserDay[] = currentDay?.users ?? []
 
-  const lateCount    = users.filter((u) => enrichedStatus(u, threshold, selectedDate) === 'present_late').length
+  const lateCount    = users.filter((u) => ['present_late', 'retard'].includes(enrichedStatus(u, threshold, selectedDate))).length
   const presentCount = users.filter((u) => ['present', 'present_late'].includes(enrichedStatus(u, threshold, selectedDate))).length
   const absentCount  = users.filter((u) => enrichedStatus(u, threshold, selectedDate) === 'absent').length
   const congeCount   = users.filter((u) => enrichedStatus(u, threshold, selectedDate) === 'conge').length
@@ -429,6 +432,7 @@ const ManagerDash: React.FC = () => {
                         {es === 'present_late' && (
                           <span style={{ fontSize: '0.7rem', color: '#4ade80', opacity: 0.8 }}>⏰</span>
                         )}
+                        {user.note && <span className="status-col-note">{user.note}</span>}
                       </div>
                     </div>
                   )
@@ -446,7 +450,7 @@ const ManagerDash: React.FC = () => {
                 <span className="status-col-count">{lateCount}</span>
               </div>
               <div className="status-col-body">
-                {users.filter((u) => enrichedStatus(u, threshold, selectedDate) === 'present_late').map((user) => (
+                {users.filter((u) => ['present_late', 'retard'].includes(enrichedStatus(u, threshold, selectedDate))).map((user) => (
                   <div key={user.user_id} className="status-col-agent" onClick={() => openEdit(user, selectedDate)} style={{ cursor: 'pointer' }}>
                     <div className="status-col-agent-info">
                       <span className="agent-name">{user.username}</span>
@@ -463,6 +467,7 @@ const ManagerDash: React.FC = () => {
                           </>
                         )
                       })()}
+                      {user.note && <span className="status-col-note">{user.note}</span>}
                     </div>
                   </div>
                 ))}
@@ -487,6 +492,7 @@ const ManagerDash: React.FC = () => {
                         <span className="alerts-status-badge" style={{ fontSize: '0.7rem', padding: '1px 6px', background: es === 'conge' ? '#818cf822' : '#ef444422', color: es === 'conge' ? '#818cf8' : '#ef4444', borderColor: es === 'conge' ? '#818cf855' : '#ef444455' }}>
                           {es === 'conge' ? 'Congé' : 'Absent'}
                         </span>
+                        {user.note && <span className="status-col-note">{user.note}</span>}
                       </div>
                     </div>
                   )
@@ -507,6 +513,7 @@ const ManagerDash: React.FC = () => {
                     <div className="status-col-agent-info">
                       <span className="agent-name">{user.username}</span>
                       {user.profil && <span className="agent-profil">{profilLabel(user.profil)}</span>}
+                      {user.note && <span className="status-col-note">{user.note}</span>}
                     </div>
                   </div>
                 ))}

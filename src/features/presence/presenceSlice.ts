@@ -21,7 +21,7 @@ export type UserDay = {
   username: string
   profil?: string
   is_active?: number | boolean
-  status: 'present' | 'absent' | 'partial' | 'conge' | null
+  status: 'present' | 'absent' | 'partial' | 'retard' | 'conge' | null
   note: string | null
   daily_id: number | null
   logs: PresenceLog[]

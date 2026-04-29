@@ -171,10 +171,13 @@ const AgentMapList: React.FC = () => {
     if (filterActive === 'inactive' && a.is_active !== 0) return false
     if (!search.trim()) return true
     const q = search.toLowerCase()
+    const uname = String(a.username ?? '').toLowerCase()
+    const nomPresence = String(a.nom_presence ?? '').toLowerCase()
+    const p = String(a.profil ?? '').toLowerCase()
     return (
-      a.username.toLowerCase().includes(q) ||
-      (a.nom_presence ?? '').toLowerCase().includes(q) ||
-      (a.profil ?? '').toLowerCase().includes(q)
+      uname.includes(q) ||
+      nomPresence.includes(q) ||
+      p.includes(q)
     )
   })
 
@@ -199,7 +202,7 @@ const AgentMapList: React.FC = () => {
             </>
           ) : (
             <>
-              <Link to="/" className="btn-manager-link">⏱ Pointer</Link>
+              <Link to="/pointer" className="btn-manager-link">⏱ Pointer</Link>
               <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
               <span className="btn-manager-link btn-manager-link--active">👥 Agents</span>
             </>

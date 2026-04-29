@@ -59,6 +59,14 @@ const AgentMapList: React.FC = () => {
   const username = userDetail?.username ?? ''
   const profil = (userDetail?.profil as string) ?? ''
   const isAdmin = profil === 'admin' || profil === 'superadmin'
+  const managedBureauIds = Array.from(new Set((userDetail?.bureaux ?? [])
+    .map((b: any) => Number(b?.id))
+    .filter((id) => Number.isFinite(id) && id > 0)
+  ))
+  const bureauOptions = isAdmin
+    ? BUREAU_IDS
+    : (managedBureauIds.length > 0 ? managedBureauIds : (myBureauId ? [myBureauId] : []))
+  const canSelectBureau = isAdmin || bureauOptions.length > 1
 
   const [agents, setAgents] = useState<AgentMap[]>([])
   const [loading, setLoading] = useState(true)
@@ -217,15 +225,15 @@ const AgentMapList: React.FC = () => {
         <div className="overview-toolbar">
 
           {/* Sélecteur bureau admin */}
-          {isAdmin && (
+          {canSelectBureau && (
             <div className="bureau-select-control">
               <label htmlFor="bureau-select-agents">🏢 Bureau</label>
               <select
                 id="bureau-select-agents"
                 className="bureau-select"
-                value={showAllBureaux ? 'all' : activeBureauId}
+                value={isAdmin && showAllBureaux ? 'all' : activeBureauId}
                 onChange={(e) => {
-                  if (e.target.value === 'all') {
+                  if (isAdmin && e.target.value === 'all') {
                     setShowAllBureaux(true)
                     setSelectedBureauId(0)
                   } else {
@@ -234,8 +242,8 @@ const AgentMapList: React.FC = () => {
                   }
                 }}
               >
-                <option value="all">Tous les bureaux</option>
-                {BUREAU_IDS.map((id) => (
+                {isAdmin && <option value="all">Tous les bureaux</option>}
+                {bureauOptions.map((id) => (
                   <option key={id} value={id}>{bureauLabel(id)}</option>
                 ))}
               </select>

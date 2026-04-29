@@ -154,8 +154,16 @@ const ManagerDash: React.FC = () => {
   const username = userDetail?.username ?? ''
   const profil = (userDetail?.profil as string) ?? ''
   const isAdmin = profil === 'admin' || profil === 'superadmin'
+  const managedBureauIds = Array.from(new Set((userDetail?.bureaux ?? [])
+    .map((b: any) => Number(b?.id))
+    .filter((id) => Number.isFinite(id) && id > 0)
+  ))
 
   const BUREAU_IDS = [3, 4, 5, 6, 7, 8, 9, 10]
+  const bureauOptions = isAdmin
+    ? BUREAU_IDS
+    : (managedBureauIds.length > 0 ? managedBureauIds : (myBureauId ? [myBureauId] : []))
+  const canSelectBureau = isAdmin || bureauOptions.length > 1
 
   const [selectedBureauId, setSelectedBureauId] = useState<number>(0)
   const bureauId = selectedBureauId || myBureauId
@@ -344,7 +352,7 @@ const ManagerDash: React.FC = () => {
           </div>
 
           <div className="manager-top-right">
-            {isAdmin && (
+            {canSelectBureau && (
               <div className="bureau-select-control">
                 <label htmlFor="bureau-select-dash">🏢 Bureau</label>
                 <select
@@ -353,7 +361,7 @@ const ManagerDash: React.FC = () => {
                   value={selectedBureauId || myBureauId}
                   onChange={(e) => setSelectedBureauId(Number(e.target.value))}
                 >
-                  {BUREAU_IDS.map((id) => (
+                  {bureauOptions.map((id) => (
                     <option key={id} value={id}>{bureauLabel(id)}</option>
                   ))}
                 </select>

@@ -157,7 +157,7 @@ const PresenceOverview: React.FC = () => {
 
   // ── Local UI-only state ──────────────────────────────────────────────────
   const [filter, setFilter]   = useState<'all' | 'issues'>('all')
-  const [expandedBureauId, setExpandedBureauId]     = useState<number | null>(null)
+  const [expandedBureaux, setExpandedBureaux]       = useState<Record<number, boolean>>({})
   const [bureauLoadingId, setBureauLoadingId]       = useState<number | null>(null)
   const [bureauCardFilter, setBureauCardFilter]     = useState<Record<number, 'all' | 'non_pointe' | 'absent' | 'retard' | 'present-late'>>({})
   const [showPresent, setShowPresent]               = useState<Record<number, boolean>>({})
@@ -165,7 +165,7 @@ const PresenceOverview: React.FC = () => {
   const toggleCardFilter = (bureau_id: number, f: 'non_pointe' | 'absent' | 'retard' | 'present-late', e: React.MouseEvent) => {
     e.stopPropagation()
     setBureauCardFilter(prev => ({ ...prev, [bureau_id]: prev[bureau_id] === f ? 'all' : f }))
-    if (expandedBureauId !== bureau_id) toggleBureau(bureau_id)
+    if (!expandedBureaux[bureau_id]) toggleBureau(bureau_id)
   }
 
   // ── Effects ──────────────────────────────────────────────────────────────
@@ -182,8 +182,7 @@ const PresenceOverview: React.FC = () => {
   }, [dispatch, isAdmin])
 
   const toggleBureau = (bureau_id: number) => {
-    if (expandedBureauId === bureau_id) { setExpandedBureauId(null); return }
-    setExpandedBureauId(bureau_id)
+    setExpandedBureaux((prev) => ({ ...prev, [bureau_id]: !prev[bureau_id] }))
   }
 
   const goDay = (n: number) => {
@@ -378,7 +377,7 @@ const PresenceOverview: React.FC = () => {
                   const bName      = BUREAU_NAMES[bureau_id] ?? `Bureau ${bureau_id}`
                   const bAlerts    = alertsByBureau[bureau_id] ?? []
                   const rawAgents  = (allBureauxData[bureau_id] ?? []).filter((a) => a.is_active !== 0 && a.is_active !== false)
-                  const isExpanded = expandedBureauId === bureau_id
+                  const isExpanded = !!expandedBureaux[bureau_id]
                   const isLoadingFull = bureauLoadingId === bureau_id
                   const activeFilter = bureauCardFilter[bureau_id] ?? 'all'
 
@@ -547,7 +546,7 @@ const PresenceOverview: React.FC = () => {
                               )}
                               {[...displayedAgents]
                                 .sort((a, b) => {
-                                  const order: Record<string, number> = { absent: 0, retard: 1, 'present-late': 2, non_pointe: 3, conge: 4, present: 5 }
+                                  const order: Record<string, number> = { absent: 0, retard: 1, conge: 2, non_pointe: 3, 'present-late': 4, present: 5 }
                                   const sa = statusMap.get(a.user_id) ?? 'present'
                                   const sb = statusMap.get(b.user_id) ?? 'present'
                                   return (order[sa] ?? 6) - (order[sb] ?? 6)

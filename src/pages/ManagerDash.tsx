@@ -7,6 +7,7 @@ import {
   convertUtcHHMMToBusinessHHMM,
   formatIsoTimeInBusinessTZ,
   toBusinessISODate,
+  parseBackendTimestampToCairoMinutes,
 } from '../utils/businessTime'
 
 const API = ((import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:4000') + '/api'
@@ -129,8 +130,10 @@ function firstCheckin(user: UserDay): string | null {
 function isLate(user: UserDay, threshold: string, _date: string): boolean {
   const ci = firstCheckin(user)
   if (!ci) return false
-  const hhmm = convertUtcHHMMToBusinessHHMM(ci.slice(11, 16))
-  return hhmm > threshold
+  const cairoMin = parseBackendTimestampToCairoMinutes(ci)
+  if (cairoMin === null) return false
+  const [th, tm] = threshold.split(':').map(Number)
+  return cairoMin > th * 60 + tm
 }
 
 /** Retourne le statut enrichi pour un agent */

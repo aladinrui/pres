@@ -3,6 +3,12 @@ import axios from 'axios'
 import { Link } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logout } from '../features/auth/authSlice'
+import {
+  BUSINESS_TIME_ZONE,
+  formatIsoTimeInBusinessTZ,
+  getBusinessNowDate,
+  toBusinessYearMonth,
+} from '../utils/businessTime'
 
 const API = ((import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:4000') + '/api'
 
@@ -79,11 +85,8 @@ type MonthData = {
   days: MonthDay[]
 }
 
-const addOffset = (d: Date): Date => new Date(d.getTime() + 3 * 60 * 60 * 1000)
-
 const formatTime = (isoString: string): string => {
-  const d = addOffset(new Date(isoString))
-  return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return formatIsoTimeInBusinessTZ(isoString, true)
 }
 
 const formatFullDate = (now: Date): string => {
@@ -94,7 +97,7 @@ const Presence: React.FC = () => {
   const dispatch = useAppDispatch()
   const userDetail = useAppSelector((s) => s.user.userDetail)
 
-  const [now, setNow] = useState(new Date())
+  const [now, setNow] = useState(getBusinessNowDate())
   const [todayData, setTodayData] = useState<TodayData | null>(null)
   const [weekData, setWeekData] = useState<WeekData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -106,12 +109,12 @@ const Presence: React.FC = () => {
   const [activePanel, setActivePanel] = useState<'week' | 'month'>('week')
   const [monthData, setMonthData] = useState<MonthData | null>(null)
   const [monthLoading, setMonthLoading] = useState(false)
-  const [monthYM, setMonthYM] = useState<string>(now.toISOString().slice(0, 7)) // YYYY-MM
+  const [monthYM, setMonthYM] = useState<string>(toYearMonthLocal(now)) // YYYY-MM
   const [expandedDay, setExpandedDay] = useState<number | null>(null)
 
   // Horloge temps réel
   useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000)
+    const timer = setInterval(() => setNow(getBusinessNowDate()), 1000)
     return () => clearInterval(timer)
   }, [])
 
@@ -119,6 +122,8 @@ const Presence: React.FC = () => {
   const username = userDetail?.username ?? ''
   const bureauId = userDetail?.bureau_id ?? (userDetail?.bureaux?.[0] as any)?.id ?? 0
   const profil = (userDetail?.profil as string) ?? ''
+  const profileLower = profil.toLowerCase()
+  const canOpenCrmRecap = ['crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower)
 
   const fetchToday = useCallback(async () => {
     if (!userId) return
@@ -174,7 +179,7 @@ const Presence: React.FC = () => {
     const [y, m] = monthYM.split('-').map(Number)
     const d = new Date(y, m - 1 + n, 1)
     const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    const currentYM = now.toISOString().slice(0, 7)
+    const currentYM = toBusinessYearMonth()
     if (next > currentYM) return
     setMonthYM(next)
     setExpandedDay(null)
@@ -190,7 +195,7 @@ const Presence: React.FC = () => {
         username,
         bureau_id: bureauId,
         profil,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timezone: BUSINESS_TIME_ZONE,
       })
       await fetchToday()
       await fetchWeek()
@@ -211,7 +216,7 @@ const Presence: React.FC = () => {
         username,
         bureau_id: bureauId,
         profil,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timezone: BUSINESS_TIME_ZONE,
       })
       await fetchToday()
       await fetchWeek()
@@ -244,14 +249,15 @@ const Presence: React.FC = () => {
             <span className="header-username">{username}</span>
             {profil && <span className="header-badge">{profil}</span>}
           </span>
-          {['manager', 'man', 'crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profil.toLowerCase()) && (
+          {['manager', 'man', 'crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower) && (
             <>
-              {['admin', 'superadmin'].includes(profil.toLowerCase())
+              {['admin', 'superadmin'].includes(profileLower)
                 ? <Link to="/manager" className="btn-manager-link">📊 Général</Link>
                 : <span className="btn-manager-link btn-manager-link--active">⏱ Pointer</span>
               }
               <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
               <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
+              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">📈 CRM Récap</Link>}
             </>
           )}
           <button className="btn-logout" onClick={handleLogout}>Déconnexion</button>
@@ -476,7 +482,7 @@ const Presence: React.FC = () => {
                 <button
                   className="date-nav-btn"
                   onClick={() => goMonth(1)}
-                  disabled={monthYM >= now.toISOString().slice(0, 7)}
+                  disabled={monthYM >= toBusinessYearMonth()}
                 >&#8250;</button>
               </div>
 
@@ -605,6 +611,10 @@ function toISODate(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+function toYearMonthLocal(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
 function formatShortDate(iso: string): string {

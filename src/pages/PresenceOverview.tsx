@@ -10,6 +10,11 @@ import {
   setThreshold,
   type UserDay,
 } from '../features/presence/presenceSlice'
+import {
+  convertUtcHHMMToBusinessHHMM,
+  formatIsoTimeInBusinessTZ,
+  toBusinessISODate,
+} from '../utils/businessTime'
 
 const MOIS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
 const JOURS = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']
@@ -46,8 +51,7 @@ function profilLabel(p: string | null | undefined) {
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function todayISO() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return toBusinessISODate()
 }
 
 function addDays(iso: string, n: number) {
@@ -61,26 +65,20 @@ function formatDateFR(iso: string) {
   return `${JOURS[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]} ${d.getFullYear()}`
 }
 
-function plus3HoursHHMM(hhmm: string): string {
-  const [h, m] = hhmm.split(':').map(Number)
-  const minutes = (h * 60 + m + 180) % (24 * 60)
-  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
-}
-
 function formatTime(iso: string) {
-  return plus3HoursHHMM(iso.slice(11, 16))
+  return formatIsoTimeInBusinessTZ(iso)
 }
 
 /** Formate "HH:MM:SS" en "HH:MM" */
 function formatHHMM(t: string | null | undefined): string | null {
   if (!t) return null
-  return plus3HoursHHMM(t.slice(0, 5))
+  return convertUtcHHMMToBusinessHHMM(t.slice(0, 5))
 }
 
 /** Compare "HH:MM:SS" UTC au seuil "HH:MM" local — applique +3h avant comparaison */
 function isCheckinLate(checkinTime: string | null | undefined, threshold: string): boolean {
   if (!checkinTime) return false
-  return plus3HoursHHMM(checkinTime.slice(0, 5)) > threshold
+  return convertUtcHHMMToBusinessHHMM(checkinTime.slice(0, 5)) > threshold
 }
 
 /** Retourne l'heure du 1er pointage IN, ou null */
@@ -93,7 +91,7 @@ function firstCheckin(user: UserDay): string | null {
 function isLateByTime(user: UserDay, threshold: string): boolean {
   const ci = firstCheckin(user)
   if (!ci) return false
-  return plus3HoursHHMM(ci.slice(11, 16)) > threshold
+  return convertUtcHHMMToBusinessHHMM(ci.slice(11, 16)) > threshold
 }
 
 type AlertKind = 'absent' | 'late-status' | 'late-time' | 'present-late' | 'ok' | 'conge' | 'not-checked'
@@ -135,6 +133,8 @@ const PresenceOverview: React.FC = () => {
   const username  = userDetail?.username ?? ''
   const profil    = (userDetail?.profil as string) ?? ''
   const isAdmin   = profil === 'admin' || profil === 'superadmin'
+  const profileLower = profil.toLowerCase()
+  const canOpenCrmRecap = ['crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower)
 
   const BUREAU_IDS_ALL = [3, 4, 5, 6, 7, 8, 9, 10]
 
@@ -240,12 +240,14 @@ const PresenceOverview: React.FC = () => {
               <span className="btn-manager-link btn-manager-link--active">📊 Général</span>
               <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
               <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
+              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">📈 CRM Récap</Link>}
             </>
           ) : (
             <>
               <Link to="/pointer" className="btn-manager-link">⏱ Pointer</Link>
               <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
               <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
+              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">📈 CRM Récap</Link>}
             </>
           )}
           <button className="btn-logout" onClick={() => dispatch(logout())}>Déconnexion</button>

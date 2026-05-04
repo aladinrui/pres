@@ -1,6 +1,7 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import axios from 'axios'
 import type { RootState } from '../../store'
+import { toBusinessISODate } from '../../utils/businessTime'
 
 const API = ((import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:4000') + '/api'
 
@@ -81,8 +82,7 @@ type PresenceState = {
 }
 
 function todayISO() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return toBusinessISODate()
 }
 
 const initialState: PresenceState = {

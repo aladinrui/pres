@@ -6,6 +6,7 @@ import Presence from './pages/Presence'
 import PresenceOverview from './pages/PresenceOverview'
 import ManagerDash from './pages/ManagerDash'
 import AgentMapList from './pages/AgentMapList'
+import CrmRecap from './pages/CrmRecap'
 import RequireAuth from './components/RequireAuth'
 import RequireRole from './components/RequireRole'
 import { useAppSelector } from './store/hooks'
@@ -28,6 +29,8 @@ const isIpCheckAllowed = (payload: unknown): boolean => {
 const MANAGER_ROLES    = ['man', 'manager', 'crm_manager', 'crm manager', 'admin', 'superadmin']
 const ADMIN_ROLES      = ['admin', 'superadmin']
 const DAY_ROLES        = ['man', 'manager', 'crm_manager', 'crm manager']
+const CRM_MANAGER_ROLES = ['crm_manager', 'crm manager', 'admin', 'superadmin']
+const CRM_ONLY_ROLES = ['crm_manager', 'crm manager']
 
 const ManagerRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <RequireAuth>
@@ -39,6 +42,7 @@ const ManagerRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 const HomeRoute: React.FC = () => {
   const profil = (useAppSelector((s) => s.user.userDetail?.profil as string | undefined) ?? '').toLowerCase()
   if (ADMIN_ROLES.includes(profil)) return <Navigate to="/manager" replace />
+  if (CRM_ONLY_ROLES.includes(profil)) return <Navigate to="/manager/crm-recap" replace />
   if (DAY_ROLES.includes(profil)) return <Navigate to="/manager/day" replace />
   return <Presence />
 }
@@ -46,6 +50,7 @@ const HomeRoute: React.FC = () => {
 /** Redirige les managers (non-admin) depuis /manager vers /manager/day */
 const ManagerHomeRoute: React.FC = () => {
   const profil = (useAppSelector((s) => s.user.userDetail?.profil as string | undefined) ?? '').toLowerCase()
+  if (CRM_ONLY_ROLES.includes(profil)) return <Navigate to="/manager/crm-recap" replace />
   if (!ADMIN_ROLES.includes(profil)) return <Navigate to="/manager/day" replace />
   return <PresenceOverview />
 }
@@ -94,6 +99,7 @@ const App: React.FC = () => {
         <Route path="/manager" element={<ManagerRoute><ManagerHomeRoute /></ManagerRoute>} />
         <Route path="/manager/day" element={<ManagerRoute><ManagerDash /></ManagerRoute>} />
         <Route path="/manager/agents" element={<ManagerRoute><AgentMapList /></ManagerRoute>} />
+        <Route path="/manager/crm-recap" element={<RequireAuth><RequireRole roles={CRM_MANAGER_ROLES}><CrmRecap /></RequireRole></RequireAuth>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -3,6 +3,11 @@ import axios from 'axios'
 import { Link } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logout } from '../features/auth/authSlice'
+import {
+  convertUtcHHMMToBusinessHHMM,
+  formatIsoTimeInBusinessTZ,
+  toBusinessISODate,
+} from '../utils/businessTime'
 
 const API = ((import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:4000') + '/api'
 
@@ -85,8 +90,7 @@ const STATUS_OPTIONS: { value: UiStatus; label: string; color: string }[] = [
 // ── Utils ──────────────────────────────────────────────────────────────────
 
 function todayISO(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return toBusinessISODate()
 }
 
 function formatDateFR(iso: string): string {
@@ -94,15 +98,8 @@ function formatDateFR(iso: string): string {
   return `${JOURS[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]} ${d.getFullYear()}`
 }
 
-function plus3HoursHHMM(hhmm: string): string {
-  const [h, m] = hhmm.split(':').map(Number)
-  const minutes = (h * 60 + m + 180) % (24 * 60)
-  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
-}
-
 function formatTime(iso: string): string {
-  const hhmm = iso.slice(11, 16)
-  return plus3HoursHHMM(hhmm)
+  return formatIsoTimeInBusinessTZ(iso)
 }
 
 /** Retourne le décalage entre une heure "HH:MM" et le seuil "HH:MM", ex: "+45min" ou "+1h15" */
@@ -132,7 +129,7 @@ function firstCheckin(user: UserDay): string | null {
 function isLate(user: UserDay, threshold: string, _date: string): boolean {
   const ci = firstCheckin(user)
   if (!ci) return false
-  const hhmm = plus3HoursHHMM(ci.slice(11, 16))
+  const hhmm = convertUtcHHMMToBusinessHHMM(ci.slice(11, 16))
   return hhmm > threshold
 }
 
@@ -153,7 +150,9 @@ const ManagerDash: React.FC = () => {
   const myBureauId = userDetail?.bureau_id ?? (userDetail?.bureaux?.[0] as any)?.id ?? 0
   const username = userDetail?.username ?? ''
   const profil = (userDetail?.profil as string) ?? ''
+  const profileLower = profil.toLowerCase()
   const isAdmin = profil === 'admin' || profil === 'superadmin'
+  const canOpenCrmRecap = ['crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower)
   const managedBureauIds = Array.from(new Set((userDetail?.bureaux ?? [])
     .map((b: any) => Number(b?.id))
     .filter((id) => Number.isFinite(id) && id > 0)
@@ -322,12 +321,14 @@ const ManagerDash: React.FC = () => {
               <Link to="/manager" className="btn-manager-link">📊 Général</Link>
               <span className="btn-manager-link btn-manager-link--active">📅 Journée</span>
               <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
+              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">📈 CRM Récap</Link>}
             </>
           ) : (
             <>
               <Link to="/pointer" className="btn-manager-link">⏱ Pointer</Link>
               <span className="btn-manager-link btn-manager-link--active">📅 Journée</span>
               <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
+              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">📈 CRM Récap</Link>}
             </>
           )}
           <button className="btn-logout" onClick={() => dispatch(logout())}>Déconnexion</button>

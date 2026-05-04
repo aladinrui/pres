@@ -59,6 +59,8 @@ const AgentMapList: React.FC = () => {
   const username = userDetail?.username ?? ''
   const profil = (userDetail?.profil as string) ?? ''
   const isAdmin = profil === 'admin' || profil === 'superadmin'
+  const profileLower = profil.toLowerCase()
+  const canOpenCrmRecap = ['crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower)
   const managedBureauIds = Array.from(new Set((userDetail?.bureaux ?? [])
     .map((b: any) => Number(b?.id))
     .filter((id) => Number.isFinite(id) && id > 0)
@@ -207,12 +209,14 @@ const AgentMapList: React.FC = () => {
               <Link to="/manager" className="btn-manager-link">📊 Général</Link>
               <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
               <span className="btn-manager-link btn-manager-link--active">👥 Agents</span>
+              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">📈 CRM Récap</Link>}
             </>
           ) : (
             <>
               <Link to="/pointer" className="btn-manager-link">⏱ Pointer</Link>
               <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
               <span className="btn-manager-link btn-manager-link--active">👥 Agents</span>
+              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">📈 CRM Récap</Link>}
             </>
           )}
           <button className="btn-logout" onClick={() => dispatch(logout())}>Déconnexion</button>

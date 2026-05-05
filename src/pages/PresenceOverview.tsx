@@ -14,6 +14,7 @@ import {
   convertUtcHHMMToBusinessHHMM,
   formatIsoTimeInBusinessTZ,
   toBusinessISODate,
+  parseToCairoHHMM,
 } from '../utils/businessTime'
 
 const MOIS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
@@ -69,16 +70,19 @@ function formatTime(iso: string) {
   return formatIsoTimeInBusinessTZ(iso)
 }
 
-/** Formate "HH:MM:SS" en "HH:MM" */
+/** Formate n'importe quelle valeur heure backend en "HH:MM" Cairo */
 function formatHHMM(t: string | null | undefined): string | null {
   if (!t) return null
-  return convertUtcHHMMToBusinessHHMM(t.slice(0, 5))
+  return parseToCairoHHMM(t)
 }
 
-/** Compare "HH:MM:SS" UTC au seuil "HH:MM" local — applique +3h avant comparaison */
+/** Compare une valeur heure backend au seuil "HH:MM" — tout en Cairo */
 function isCheckinLate(checkinTime: string | null | undefined, threshold: string): boolean {
   if (!checkinTime) return false
-  return convertUtcHHMMToBusinessHHMM(checkinTime.slice(0, 5)) > threshold
+  const hhmm = parseToCairoHHMM(checkinTime)
+  const [ch, cm] = hhmm.split(':').map(Number)
+  const [th, tm] = threshold.split(':').map(Number)
+  return ch * 60 + cm > th * 60 + tm
 }
 
 /** Retourne l'heure du 1er pointage IN, ou null */
@@ -87,11 +91,14 @@ function firstCheckin(user: UserDay): string | null {
   return ins.length > 0 ? ins[0].timestamp : null
 }
 
-/** true si l'heure de premier IN dépasse le seuil hh:mm (comparaison en heure locale affichée) */
+/** true si l'heure de premier IN dépasse le seuil hh:mm (comparaison en heure Cairo) */
 function isLateByTime(user: UserDay, threshold: string): boolean {
   const ci = firstCheckin(user)
   if (!ci) return false
-  return convertUtcHHMMToBusinessHHMM(ci.slice(11, 16)) > threshold
+  const hhmm = parseToCairoHHMM(ci)
+  const [ch, cm] = hhmm.split(':').map(Number)
+  const [th, tm] = threshold.split(':').map(Number)
+  return ch * 60 + cm > th * 60 + tm
 }
 
 type AlertKind = 'absent' | 'late-status' | 'late-time' | 'present-late' | 'ok' | 'conge' | 'not-checked'

@@ -3,7 +3,7 @@ import axios from 'axios'
 import { Link } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logout } from '../features/auth/authSlice'
-import { toBusinessISODate, formatIsoTimeInBusinessTZ, convertUtcHHMMToBusinessHHMM } from '../utils/businessTime'
+import { toBusinessISODate, formatIsoTimeInBusinessTZ, convertUtcHHMMToBusinessHHMM, parseToCairoHHMM } from '../utils/businessTime'
 
 const API = ((import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:4000') + '/api'
 
@@ -161,16 +161,7 @@ function resolveCheckinTime(day: AgentDetailDay): string | null {
 function formatCheckinHHMM(day: AgentDetailDay): string | null {
   const raw = resolveCheckinTime(day)
   if (!raw) return null
-  // Full timestamp (e.g. "2026-05-04 08:16:10") → convert UTC→Cairo via formatIsoTimeInBusinessTZ
-  if (raw.includes('-') || raw.includes('T')) {
-    try { return formatIsoTimeInBusinessTZ(raw) } catch { /* fall through */ }
-  }
-  // Plain time "HH:MM:SS" → convert UTC→Cairo
-  if (/^\d{2}:\d{2}/.test(raw)) {
-    try { return convertUtcHHMMToBusinessHHMM(raw) } catch { /* fall through */ }
-  }
-  const match = raw.match(/(\d{2}):(\d{2})/)
-  return match ? `${match[1]}:${match[2]}` : raw
+  return parseToCairoHHMM(raw)
 }
 
 function formatDayLabel(iso: string): string {

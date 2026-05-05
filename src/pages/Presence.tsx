@@ -27,8 +27,7 @@ type PresenceLog = {
   bureau_id: number
   profil: string
   type: 'in' | 'out'
-  timestamp: string
-  timezone: string
+  timestamp: string  // Always UTC (backend must ensure this)
   ip_address: string | null
   note: string | null
   created_at: string
@@ -195,7 +194,7 @@ const Presence: React.FC = () => {
         username,
         bureau_id: bureauId,
         profil,
-        timezone: BUSINESS_TIME_ZONE,
+        // Backend MUST store timestamp as UTC, never influenced by client timezone
       })
       await fetchToday()
       await fetchWeek()
@@ -216,7 +215,7 @@ const Presence: React.FC = () => {
         username,
         bureau_id: bureauId,
         profil,
-        timezone: BUSINESS_TIME_ZONE,
+        // Backend MUST store timestamp as UTC, never influenced by client timezone
       })
       await fetchToday()
       await fetchWeek()

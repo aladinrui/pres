@@ -61,12 +61,11 @@ function parseBackendDate(value: string): Date {
 }
 
 export function formatIsoTimeInBusinessTZ(iso: string, withSeconds = false): string {
-  return parseBackendDate(iso).toLocaleTimeString('fr-FR', {
-    timeZone: BUSINESS_TIME_ZONE,
-    hour: '2-digit',
-    minute: '2-digit',
-    ...(withSeconds ? { second: '2-digit' } : {}),
-  })
+  const d = parseBackendDate(iso)
+  const p = getZonedParts(d)
+  const hhmm = `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`
+  if (withSeconds) return `${hhmm}:${String(p.second).padStart(2, '0')}`
+  return hhmm
 }
 
 export function convertUtcHHMMToBusinessHHMM(hhmm: string): string {
@@ -86,4 +85,22 @@ export function parseBackendTimestampToCairoMinutes(value: string): number | nul
   if (isNaN(d.getTime())) return null
   const p = getZonedParts(d)
   return p.hour * 60 + p.minute
+}
+
+/**
+ * Universal converter: accepts ANY backend value — full timestamp ("2026-05-04 08:16:10")
+ * OR plain time ("08:16" / "08:16:10") — always returns Cairo "HH:MM".
+ */
+export function parseToCairoHHMM(value: string): string {
+  const trimmed = value.trim()
+  if (/^\d{4}-/.test(trimmed) || trimmed.includes('T')) {
+    // Full timestamp
+    const p = getZonedParts(parseBackendDate(trimmed))
+    return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`
+  }
+  // Plain HH:MM or HH:MM:SS — treat as UTC
+  const [h = '0', m = '0'] = trimmed.split(':')
+  const d = new Date(Date.UTC(1970, 0, 1, Number(h), Number(m), 0))
+  const p = getZonedParts(d)
+  return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`
 }

@@ -87,6 +87,39 @@ export function parseBackendTimestampToCairoMinutes(value: string): number | nul
   return p.hour * 60 + p.minute
 }
 
+/** Bureau-specific hour offsets relative to Cairo (UTC+2). Negative = behind Cairo. */
+export const BUREAU_HOUR_OFFSET: Record<number, number> = {
+  5: -2, // MRO est UTC+0, Cairo est UTC+2
+}
+
+function shiftHHMM(hhmm: string, offsetHours: number): string {
+  const parts = hhmm.split(':')
+  const h = Number(parts[0])
+  const m = Number(parts[1])
+  const s = parts[2] !== undefined ? Number(parts[2]) : undefined
+  const totalMin = ((h * 60 + m + offsetHours * 60) % 1440 + 1440) % 1440
+  const nh = Math.floor(totalMin / 60)
+  const nm = totalMin % 60
+  const base = `${String(nh).padStart(2, '0')}:${String(nm).padStart(2, '0')}`
+  return s !== undefined ? `${base}:${String(s).padStart(2, '0')}` : base
+}
+
+/** Comme formatIsoTimeInBusinessTZ mais applique le décalage du bureau */
+export function formatTimeForBureau(iso: string, bureauId: number, withSeconds = false): string {
+  const base = formatIsoTimeInBusinessTZ(iso, withSeconds)
+  const offset = BUREAU_HOUR_OFFSET[bureauId] ?? 0
+  if (offset === 0) return base
+  return shiftHHMM(base, offset)
+}
+
+/** Comme parseToCairoHHMM mais applique le décalage du bureau */
+export function parseToBureauHHMM(value: string, bureauId: number): string {
+  const base = parseToCairoHHMM(value)
+  const offset = BUREAU_HOUR_OFFSET[bureauId] ?? 0
+  if (offset === 0) return base
+  return shiftHHMM(base, offset)
+}
+
 /**
  * Universal converter: accepts ANY backend value — full timestamp ("2026-05-04 08:16:10")
  * OR plain time ("08:16" / "08:16:10") — always returns Cairo "HH:MM".

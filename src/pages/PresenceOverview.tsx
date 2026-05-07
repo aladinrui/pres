@@ -12,7 +12,8 @@ import {
 } from '../features/presence/presenceSlice'
 import {
   convertUtcHHMMToBusinessHHMM,
-  formatIsoTimeInBusinessTZ,
+  formatTimeForBureau,
+  parseToBureauHHMM,
   toBusinessISODate,
   parseToCairoHHMM,
 } from '../utils/businessTime'
@@ -66,14 +67,14 @@ function formatDateFR(iso: string) {
   return `${JOURS[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]} ${d.getFullYear()}`
 }
 
-function formatTime(iso: string) {
-  return formatIsoTimeInBusinessTZ(iso)
+function formatTime(iso: string, bId = 0) {
+  return formatTimeForBureau(iso, bId)
 }
 
-/** Formate n'importe quelle valeur heure backend en "HH:MM" Cairo */
-function formatHHMM(t: string | null | undefined): string | null {
+/** Formate n'importe quelle valeur heure backend en "HH:MM" selon le bureau */
+function formatHHMM(t: string | null | undefined, bId = 0): string | null {
   if (!t) return null
-  return parseToCairoHHMM(t)
+  return parseToBureauHHMM(t, bId)
 }
 
 /** Compare une valeur heure backend au seuil "HH:MM" — tout en Cairo */
@@ -142,6 +143,8 @@ const PresenceOverview: React.FC = () => {
   const isAdmin   = profil === 'admin' || profil === 'superadmin'
   const profileLower = profil.toLowerCase()
   const canOpenCrmRecap = ['crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower)
+
+  const myBureauId: number = userDetail?.bureau_id ?? 0
 
   const BUREAU_IDS_ALL = [3, 4, 5, 6, 7, 8, 9, 10]
 
@@ -566,11 +569,11 @@ const PresenceOverview: React.FC = () => {
                                   // Récupérer checkin_time et schedule_start depuis l'alerte
                                   const alertData = bAlerts.find((a) => a.user_id === agent.user_id)
                                   const checkinDisplay = alertData?.checkin_time
-                                    ? formatHHMM(alertData.checkin_time)
-                                    : ci ? formatTime(ci)
-                                    : alertData?.updated_at ? formatTime(alertData.updated_at)
+                                    ? formatHHMM(alertData.checkin_time, bureau_id)
+                                    : ci ? formatTime(ci, bureau_id)
+                                    : alertData?.updated_at ? formatTime(alertData.updated_at, bureau_id)
                                     : null
-                                  const scheduleDisplay = formatHHMM(alertData?.schedule_start)
+                                  const scheduleDisplay = formatHHMM(alertData?.schedule_start, bureau_id)
                                   // Forcer present-late au render si présent et checkin tardif
                                   const effectiveStatus = (agStatus === 'present' && (
                                     alertData?.checkin_time ? isCheckinLate(alertData.checkin_time, threshold)
@@ -708,7 +711,7 @@ const PresenceOverview: React.FC = () => {
                                 </div>
                                 <div><span className="alerts-status-badge" style={{ background: sm.color + '22', color: sm.color, borderColor: sm.color + '55' }}>{sm.label}</span></div>
                                 <div>{agent.note ? <span className="alerts-note-text">{agent.note}</span> : <span className="note-preview-empty">—</span>}</div>
-                                <div>{agent.updated_at ? <span className="alerts-time">{formatTime(agent.updated_at)}</span> : <span className="note-preview-empty">—</span>}</div>
+                                <div>{agent.updated_at ? <span className="alerts-time">{formatTime(agent.updated_at, bureau_id)}</span> : <span className="note-preview-empty">—</span>}</div>
                               </div>
                             )
                           })}
@@ -754,7 +757,7 @@ const PresenceOverview: React.FC = () => {
                         </div>
                         <div className="overview-card-mid">
                           {ci
-                            ? <span className={`overview-checkin-time ${kind === 'late-time' ? 'overview-checkin-late' : ''}`}>▶ {formatTime(ci)}{kind === 'late-time' && <span className="late-flag">RETARD</span>}</span>
+                            ? <span className={`overview-checkin-time ${kind === 'late-time' ? 'overview-checkin-late' : ''}`}>▶ {formatTime(ci, myBureauId)}{kind === 'late-time' && <span className="late-flag">RETARD</span>}</span>
                             : <span className="overview-no-checkin">Aucun pointage</span>}
                         </div>
                         {(user.note || isIssue) && (

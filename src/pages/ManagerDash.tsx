@@ -5,7 +5,7 @@ import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logout } from '../features/auth/authSlice'
 import {
   convertUtcHHMMToBusinessHHMM,
-  formatIsoTimeInBusinessTZ,
+  formatTimeForBureau,
   toBusinessISODate,
   parseBackendTimestampToCairoMinutes,
 } from '../utils/businessTime'
@@ -99,8 +99,8 @@ function formatDateFR(iso: string): string {
   return `${JOURS[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]} ${d.getFullYear()}`
 }
 
-function formatTime(iso: string): string {
-  return formatIsoTimeInBusinessTZ(iso)
+function formatTime(iso: string, bId: number): string {
+  return formatTimeForBureau(iso, bId)
 }
 
 /** Retourne le décalage entre une heure "HH:MM" et le seuil "HH:MM", ex: "+45min" ou "+1h15" */
@@ -469,7 +469,7 @@ const ManagerDash: React.FC = () => {
                       {(() => {
                         const ci = firstCheckin(user)
                         if (!ci) return null
-                        const t = formatTime(ci)
+                        const t = formatTime(ci, bureauId)
                         const delay = formatDelay(t, threshold)
                         return (
                           <>

@@ -145,13 +145,25 @@ export const fetchAlerts = createAsyncThunk(
 /** Admin — charge les agents de tous les bureaux en parallèle (bureaux découverts dynamiquement) */
 export const fetchAllBureauxData = createAsyncThunk(
   'presence/fetchAllBureauxData',
-  async (_, { rejectWithValue }) => {
+  async (_, { getState, rejectWithValue }) => {
     try {
       const today = todayISO()
+      const state = getState() as RootState
+      const user  = state.user.userDetail
+
       // Découvrir les bureau_ids depuis les alertes (déjà filtrées par tenant côté backend)
       const alertsRes = await axios.get<AlertsResponse>(`${API}/presence/today/alerts`)
-      const bureauIds = [...new Set(alertsRes.data.agents.map((a) => a.bureau_id))].filter(Boolean)
+      let bureauIds = [...new Set(alertsRes.data.agents.map((a) => a.bureau_id))].filter(Boolean) as number[]
+
+      // Fallback : utiliser les bureaux du user connecté si les alertes ont bureau_id null
+      if (bureauIds.length === 0) {
+        const fromBureaux = (user?.bureaux ?? []).map((b: any) => Number(b?.id)).filter((id) => id > 0)
+        const fromBureauId = user?.bureau_id ? [Number(user.bureau_id)] : []
+        bureauIds = [...new Set([...fromBureaux, ...fromBureauId])]
+      }
+
       if (bureauIds.length === 0) return {}
+
       const results = await Promise.allSettled(
         bureauIds.map(async (bureau_id) => {
           const res = await axios.post<BureauDayResponse>(`${API}/presence/by-bureau-day`, {

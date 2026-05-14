@@ -9,6 +9,7 @@ export type TokenPayload = {
   bureaux?: { id?: number; name?: string }[]
   is_active?: number | boolean
   pass_change?: number | null
+  tenant?: string | null
   iat?: number
   exp?: number
   [key: string]: unknown

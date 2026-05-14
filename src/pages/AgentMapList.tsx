@@ -87,6 +87,77 @@ const AgentMapList: React.FC = () => {
   // Recherche
   const [search, setSearch] = useState('')
 
+  // Tenant du user connecté
+  const isTodTenant = (userDetail?.tenant as string | null | undefined) === 'tod'
+
+  // Modal créer agent (tod only)
+  const [showCreateAgent, setShowCreateAgent] = useState(false)
+  const [createForm, setCreateForm] = useState({
+    username: '',
+    password: '',
+    profil: 'agent',
+    telegramUsername: '',
+    bureauxIds: [] as number[],
+    brandIds: [] as number[],
+    nom_presence: '',
+    schedule_start: '',
+  })
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+
+  const openCreateAgent = () => {
+    setCreateForm({
+      username: '',
+      password: '',
+      profil: 'agent',
+      telegramUsername: '',
+      bureauxIds: activeBureauId ? [activeBureauId] : [],
+      brandIds: [],
+      nom_presence: '',
+      schedule_start: '',
+    })
+    setCreateError(null)
+    setShowCreateAgent(true)
+  }
+
+  const closeCreateAgent = () => {
+    setShowCreateAgent(false)
+    setCreateError(null)
+  }
+
+  const handleCreateAgent = async () => {
+    if (!createForm.username.trim() || !createForm.password.trim()) {
+      setCreateError('Username et mot de passe sont obligatoires.')
+      return
+    }
+    if (createForm.bureauxIds.length === 0) {
+      setCreateError('Sélectionne au moins un bureau.')
+      return
+    }
+    setCreating(true)
+    setCreateError(null)
+    try {
+      const body: Record<string, any> = {
+        username: createForm.username.trim(),
+        password: createForm.password.trim(),
+        profil: createForm.profil,
+        is_active: true,
+        bureauxIds: createForm.bureauxIds,
+      }
+      if (createForm.telegramUsername.trim()) body.telegramUsername = createForm.telegramUsername.trim()
+      if (createForm.brandIds.length > 0) body.brandIds = createForm.brandIds
+      if (createForm.nom_presence.trim()) body.nom_presence = createForm.nom_presence.trim()
+      if (createForm.schedule_start.trim()) body.schedule_start = createForm.schedule_start.trim()
+      await axios.post(`${API}/users`, body)
+      closeCreateAgent()
+      await fetchAgents()
+    } catch (err: any) {
+      setCreateError(err?.response?.data?.message || 'Erreur lors de la création.')
+    } finally {
+      setCreating(false)
+    }
+  }
+
   // Toggle is_active en cours
   const [togglingId, setTogglingId] = useState<number | null>(null)
 
@@ -279,6 +350,12 @@ const AgentMapList: React.FC = () => {
           <button className="btn-refresh" onClick={fetchAgents} disabled={loading}>
             {loading ? '...' : '↻'}
           </button>
+
+          {isTodTenant && (
+            <button className="btn-create-agent" onClick={openCreateAgent}>
+              ➕ Créer un agent
+            </button>
+          )}
         </div>
 
         {error && <div className="alert-error">{error}</div>}
@@ -406,6 +483,119 @@ const AgentMapList: React.FC = () => {
                 {renaming ? 'Sauvegarde...' : 'Confirmer'}
               </button>
               <button className="btn-cancel-note" onClick={closeRename}>Annuler</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal créer agent (tod only) */}
+      {showCreateAgent && (
+        <div className="modal-overlay" onClick={closeCreateAgent}>
+          <div className="modal-box modal-box--md" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>➕ Créer un agent</h3>
+              <button className="modal-close" onClick={closeCreateAgent}>✕</button>
+            </div>
+            <div className="modal-body">
+
+              <div className="form-group">
+                <label>Username *</label>
+                <input
+                  type="text"
+                  className="rename-input"
+                  value={createForm.username}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, username: e.target.value }))}
+                  placeholder="jean.dupont"
+                  autoFocus
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Mot de passe *</label>
+                <input
+                  type="password"
+                  className="rename-input"
+                  value={createForm.password}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
+                  placeholder="••••••••"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Profil</label>
+                <select
+                  className="bureau-select"
+                  value={createForm.profil}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, profil: e.target.value }))}
+                >
+                  <option value="agent">Agent</option>
+                  <option value="support">Support</option>
+                  <option value="manager">Manager</option>
+                  <option value="crm_manager">CRM Manager</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Bureaux * (sélection multiple)</label>
+                <select
+                  className="bureau-select"
+                  multiple
+                  value={createForm.bureauxIds.map(String)}
+                  onChange={(e) => {
+                    const selected = Array.from(e.target.selectedOptions).map((o) => Number(o.value))
+                    setCreateForm((f) => ({ ...f, bureauxIds: selected }))
+                  }}
+                  style={{ height: '90px' }}
+                >
+                  {BUREAU_IDS.map((id) => (
+                    <option key={id} value={id}>{bureauLabel(id)}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Telegram username</label>
+                <input
+                  type="text"
+                  className="rename-input"
+                  value={createForm.telegramUsername}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, telegramUsername: e.target.value }))}
+                  placeholder="jean_dupont"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Nom de présence</label>
+                <input
+                  type="text"
+                  className="rename-input"
+                  value={createForm.nom_presence}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, nom_presence: e.target.value }))}
+                  placeholder="Jean D. (défaut = username)"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Heure de début (schedule_start)</label>
+                <input
+                  type="time"
+                  className="rename-input"
+                  value={createForm.schedule_start}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, schedule_start: e.target.value ? e.target.value + ':00' : '' }))}
+                />
+              </div>
+
+              {createError && <div className="alert-error" style={{ marginTop: '8px' }}>{createError}</div>}
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn-save-note"
+                onClick={handleCreateAgent}
+                disabled={creating}
+              >
+                {creating ? 'Création...' : 'Créer'}
+              </button>
+              <button className="btn-cancel-note" onClick={closeCreateAgent}>Annuler</button>
             </div>
           </div>
         </div>

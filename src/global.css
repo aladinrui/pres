@@ -745,6 +745,22 @@ html, body, #root {
   color: var(--color-text);
 }
 
+.btn-create-agent {
+  background: #2563eb;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  padding: 0.62rem 1.1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.btn-create-agent:hover {
+  background: #1d4ed8;
+}
+
 .btn-show-present {
   background: transparent;
   border: 1px solid #334155;

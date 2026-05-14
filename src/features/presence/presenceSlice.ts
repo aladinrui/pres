@@ -142,14 +142,18 @@ export const fetchAlerts = createAsyncThunk(
   }
 )
 
-/** Admin — charge les agents de tous les bureaux en parallèle */
+/** Admin — charge les agents de tous les bureaux en parallèle (bureaux découverts dynamiquement) */
 export const fetchAllBureauxData = createAsyncThunk(
   'presence/fetchAllBureauxData',
   async (_, { rejectWithValue }) => {
     try {
       const today = todayISO()
+      // Découvrir les bureau_ids depuis les alertes (déjà filtrées par tenant côté backend)
+      const alertsRes = await axios.get<AlertsResponse>(`${API}/presence/today/alerts`)
+      const bureauIds = [...new Set(alertsRes.data.agents.map((a) => a.bureau_id))].filter(Boolean)
+      if (bureauIds.length === 0) return {}
       const results = await Promise.allSettled(
-        BUREAU_IDS_ALL.map(async (bureau_id) => {
+        bureauIds.map(async (bureau_id) => {
           const res = await axios.post<BureauDayResponse>(`${API}/presence/by-bureau-day`, {
             bureau_id,
             date_from: today,

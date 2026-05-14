@@ -300,7 +300,7 @@ const PresenceOverview: React.FC = () => {
               <div className="bureau-chart-section">
                 <span className="bureau-chart-title">% En service par bureau</span>
                 <div className="bureau-chart-grid">
-                  {BUREAU_IDS_ALL.map((bureau_id) => {
+                {Object.keys(allBureauxData).map(Number).sort((a, b) => a - b).map((bureau_id) => {
                     const agents  = (allBureauxData[bureau_id] ?? []).filter((a) => a.is_active !== 0 && a.is_active !== false)
                     const bAlerts = alertsByBureau[bureau_id] ?? []
                     const total   = agents.length
@@ -384,7 +384,7 @@ const PresenceOverview: React.FC = () => {
               <div className="loading-state">Chargement...</div>
             ) : (
               <div className="bureaux-cards-grid">
-                {BUREAU_IDS_ALL.map((bureau_id) => {
+                {Object.keys(allBureauxData).map(Number).sort((a, b) => a - b).map((bureau_id) => {
                   const bName      = BUREAU_NAMES[bureau_id] ?? `Bureau ${bureau_id}`
                   const bAlerts    = alertsByBureau[bureau_id] ?? []
                   const rawAgents  = (allBureauxData[bureau_id] ?? []).filter((a) => a.is_active !== 0 && a.is_active !== false)

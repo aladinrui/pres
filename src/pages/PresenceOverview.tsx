@@ -244,6 +244,11 @@ const PresenceOverview: React.FC = () => {
           <span className="header-user">
             <span className="header-username">{username}</span>
             {profil && <span className="header-badge">{profil}</span>}
+            {isAdmin && Object.keys(allBureauxData).length > 0 && (
+              <span className="header-badge" style={{ background: '#1e3a5f', color: '#7dd3fc', marginLeft: '4px', fontSize: '0.72rem' }}>
+                bureaux : {Object.keys(allBureauxData).sort((a, b) => Number(a) - Number(b)).join(', ')}
+              </span>
+            )}
           </span>
           {isAdmin ? (
             <>

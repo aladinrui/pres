@@ -123,6 +123,7 @@ const Presence: React.FC = () => {
   const profil = (userDetail?.profil as string) ?? ''
   const profileLower = profil.toLowerCase()
   const canOpenCrmRecap = ['crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower)
+    && userDetail?.tenant !== 'tod'
 
   const fetchToday = useCallback(async () => {
     if (!userId) return

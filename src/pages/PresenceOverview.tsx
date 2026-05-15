@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logout } from '../features/auth/authSlice'
+import { buildBureauNameMap } from '../utils/bureaux'
 import {
   fetchBureauDay,
   fetchAlerts,
@@ -20,18 +21,6 @@ import {
 
 const MOIS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
 const JOURS = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']
-
-const BUREAU_NAMES: Record<number, string> = {
-  3:  'CRN',
-  4:  'STV',
-  5:  'MRO',
-  6:  'SRG',
-  7:  'YN',
-  8:  'JC',
-  9:  'PAST',
-  10: 'PASC',
-}
-function bureauLabel(id: number) { return BUREAU_NAMES[id] ? `${BUREAU_NAMES[id]} (${id})` : `Bureau ${id}` }
 
 const PROFIL_LABEL: Record<string, string> = {
   ret:         'R',
@@ -143,10 +132,11 @@ const PresenceOverview: React.FC = () => {
   const isAdmin   = profil === 'admin' || profil === 'superadmin'
   const profileLower = profil.toLowerCase()
   const canOpenCrmRecap = ['crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower)
+    && userDetail?.tenant !== 'tod'
+  // Noms : JWT en priorité, fallback sur noms connus (pres : CRN/STV/etc, tod : du JWT)
+  const bureauNameMap = buildBureauNameMap(userDetail?.bureaux)
 
   const myBureauId: number = userDetail?.bureau_id ?? 0
-
-  const BUREAU_IDS_ALL = [3, 4, 5, 6, 7, 8, 9, 10]
 
   // ── Redux state ─────────────────────────────────────────────────────────
   const {
@@ -244,11 +234,7 @@ const PresenceOverview: React.FC = () => {
           <span className="header-user">
             <span className="header-username">{username}</span>
             {profil && <span className="header-badge">{profil}</span>}
-            {isAdmin && Object.keys(allBureauxData).length > 0 && (
-              <span className="header-badge" style={{ background: '#1e3a5f', color: '#7dd3fc', marginLeft: '4px', fontSize: '0.72rem' }}>
-                bureaux : {Object.keys(allBureauxData).sort((a, b) => Number(a) - Number(b)).join(', ')}
-              </span>
-            )}
+          
           </span>
           {isAdmin ? (
             <>
@@ -350,7 +336,7 @@ const PresenceOverview: React.FC = () => {
                     const pAbs       = Math.round((nAbs / total) * 100)
                     const pConge     = Math.round((nConge / total) * 100)
                     const pNP        = Math.round((nNP / total) * 100)
-                    const bName  = BUREAU_NAMES[bureau_id] ?? `B${bureau_id}`
+                    const bName  = bureauNameMap[bureau_id] ?? `B${bureau_id}`
                     return (
                       <div key={bureau_id} className="bureau-chart-row">
                         <span className="bureau-chart-label">{bName}</span>
@@ -390,7 +376,7 @@ const PresenceOverview: React.FC = () => {
             ) : (
               <div className="bureaux-cards-grid">
                 {Object.keys(allBureauxData).map(Number).sort((a, b) => a - b).map((bureau_id) => {
-                  const bName      = BUREAU_NAMES[bureau_id] ?? `Bureau ${bureau_id}`
+                  const bName      = bureauNameMap[bureau_id] ?? `Bureau ${bureau_id}`
                   const bAlerts    = alertsByBureau[bureau_id] ?? []
                   const rawAgents  = (allBureauxData[bureau_id] ?? []).filter((a) => a.is_active !== 0 && a.is_active !== false)
                   const isExpanded = !!expandedBureaux[bureau_id]
@@ -686,7 +672,7 @@ const PresenceOverview: React.FC = () => {
               ) : (
                 <div className="alerts-bureaux">
                   {bureauGroups.map(({ bureau_id, agents }) => {
-                    const bName = BUREAU_NAMES[bureau_id] ?? `Bureau ${bureau_id}`
+                    const bName = bureauNameMap[bureau_id] ?? `Bureau ${bureau_id}`
                     const nbNP  = agents.filter((a) => a.status === 'non_pointe').length
                     const nbAbs = agents.filter((a) => a.status === 'absent').length
                     const nbRet = agents.filter((a) => a.status === 'retard').length

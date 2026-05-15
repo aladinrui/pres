@@ -3,23 +3,9 @@ import axios from 'axios'
 import { Link } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logout } from '../features/auth/authSlice'
+import { buildBureauNameMap } from '../utils/bureaux'
 
 const API = ((import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:4000') + '/api'
-
-// ── Mapping bureaux ────────────────────────────────────────────────────────
-
-const BUREAU_NAMES: Record<number, string> = {
-  3:  'CRN',
-  4:  'STV',
-  5:  'MRO',
-  6:  'SRG',
-  7:  'YN',
-  8:  'JC',
-  9:  'PAST',
-  10: 'PASC',
-}
-const BUREAU_IDS = [3, 4, 5, 6, 7, 8, 9, 10]
-function bureauLabel(id: number) { return BUREAU_NAMES[id] ? `${BUREAU_NAMES[id]} (${id})` : `Bureau ${id}` }
 
 const PROFIL_LABEL: Record<string, string> = {
   ret:         'R',
@@ -61,13 +47,18 @@ const AgentMapList: React.FC = () => {
   const isAdmin = profil === 'admin' || profil === 'superadmin'
   const profileLower = profil.toLowerCase()
   const canOpenCrmRecap = ['crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower)
+    && userDetail?.tenant !== 'tod'
   const managedBureauIds = Array.from(new Set((userDetail?.bureaux ?? [])
     .map((b: any) => Number(b?.id))
     .filter((id) => Number.isFinite(id) && id > 0)
   ))
-  const bureauOptions = isAdmin
-    ? BUREAU_IDS
-    : (managedBureauIds.length > 0 ? managedBureauIds : (myBureauId ? [myBureauId] : []))
+  // Noms : JWT en priorité, fallback sur noms connus (pres : CRN/STV/etc, tod : du JWT)
+  const bureauNameMap = buildBureauNameMap(userDetail?.bureaux)
+  const getBureauLabel = (id: number) =>
+    bureauNameMap[id] ? `${bureauNameMap[id]} (${id})` : `Bureau ${id}`
+  const bureauOptions = managedBureauIds.length > 0
+    ? managedBureauIds
+    : (myBureauId ? [myBureauId] : [])
   const canSelectBureau = isAdmin || bureauOptions.length > 1
 
   const [agents, setAgents] = useState<AgentMap[]>([])
@@ -75,8 +66,10 @@ const AgentMapList: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
 
   // Bureau sélectionné (admin peut choisir, manager voit le sien)
+  // Pour l'admin, le défaut est le premier bureau de la liste (BUREAU_IDS[0]) et non myBureauId
+  // qui peut être un ID hors système de présence (ex: 101)
   const [selectedBureauId, setSelectedBureauId] = useState<number>(0)
-  const activeBureauId = selectedBureauId || myBureauId
+  const activeBureauId = selectedBureauId || (bureauOptions[0] ?? 0)
 
   // Filtre tous les bureaux (admin only)
   const [showAllBureaux, setShowAllBureaux] = useState<boolean>(false)
@@ -96,11 +89,8 @@ const AgentMapList: React.FC = () => {
     username: '',
     password: '',
     profil: 'agent',
-    telegramUsername: '',
     bureauxIds: [] as number[],
-    brandIds: [] as number[],
     nom_presence: '',
-    schedule_start: '',
   })
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
@@ -110,11 +100,8 @@ const AgentMapList: React.FC = () => {
       username: '',
       password: '',
       profil: 'agent',
-      telegramUsername: '',
       bureauxIds: activeBureauId ? [activeBureauId] : [],
-      brandIds: [],
       nom_presence: '',
-      schedule_start: '',
     })
     setCreateError(null)
     setShowCreateAgent(true)
@@ -126,6 +113,11 @@ const AgentMapList: React.FC = () => {
   }
 
   const handleCreateAgent = async () => {
+    // Defense in depth : ne jamais appeler l'API si le tenant n'est pas tod
+    if (!isTodTenant) {
+      setCreateError('Action non autorisée pour ce tenant.')
+      return
+    }
     if (!createForm.username.trim() || !createForm.password.trim()) {
       setCreateError('Username et mot de passe sont obligatoires.')
       return
@@ -144,11 +136,8 @@ const AgentMapList: React.FC = () => {
         is_active: true,
         bureauxIds: createForm.bureauxIds,
       }
-      if (createForm.telegramUsername.trim()) body.telegramUsername = createForm.telegramUsername.trim()
-      if (createForm.brandIds.length > 0) body.brandIds = createForm.brandIds
       if (createForm.nom_presence.trim()) body.nom_presence = createForm.nom_presence.trim()
-      if (createForm.schedule_start.trim()) body.schedule_start = createForm.schedule_start.trim()
-      await axios.post(`${API}/users`, body)
+      await axios.post(`${API}/users/createUser`, body)
       closeCreateAgent()
       await fetchAgents()
     } catch (err: any) {
@@ -319,7 +308,7 @@ const AgentMapList: React.FC = () => {
               >
                 {isAdmin && <option value="all">Tous les bureaux</option>}
                 {bureauOptions.map((id) => (
-                  <option key={id} value={id}>{bureauLabel(id)}</option>
+                  <option key={id} value={id}>{getBureauLabel(id)}</option>
                 ))}
               </select>
             </div>
@@ -399,7 +388,7 @@ const AgentMapList: React.FC = () => {
 
                   <div>
                     <span className="bureau-name-badge">
-                      {BUREAU_NAMES[agent.bureau_id] ?? `#${agent.bureau_id}`}
+                      {bureauNameMap[agent.bureau_id] ?? `#${agent.bureau_id}`}
                     </span>
                   </div>
 
@@ -547,21 +536,10 @@ const AgentMapList: React.FC = () => {
                   }}
                   style={{ height: '90px' }}
                 >
-                  {BUREAU_IDS.map((id) => (
-                    <option key={id} value={id}>{bureauLabel(id)}</option>
+                  {bureauOptions.map((id) => (
+                    <option key={id} value={id}>{getBureauLabel(id)}</option>
                   ))}
                 </select>
-              </div>
-
-              <div className="form-group">
-                <label>Telegram username</label>
-                <input
-                  type="text"
-                  className="rename-input"
-                  value={createForm.telegramUsername}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, telegramUsername: e.target.value }))}
-                  placeholder="jean_dupont"
-                />
               </div>
 
               <div className="form-group">
@@ -572,16 +550,6 @@ const AgentMapList: React.FC = () => {
                   value={createForm.nom_presence}
                   onChange={(e) => setCreateForm((f) => ({ ...f, nom_presence: e.target.value }))}
                   placeholder="Jean D. (défaut = username)"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Heure de début (schedule_start)</label>
-                <input
-                  type="time"
-                  className="rename-input"
-                  value={createForm.schedule_start}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, schedule_start: e.target.value ? e.target.value + ':00' : '' }))}
                 />
               </div>
 

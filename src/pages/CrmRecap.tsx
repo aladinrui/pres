@@ -3,26 +3,10 @@ import axios from 'axios'
 import { Link } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logout } from '../features/auth/authSlice'
+import { buildBureauNameMap } from '../utils/bureaux'
 import { toBusinessISODate, formatIsoTimeInBusinessTZ, convertUtcHHMMToBusinessHHMM, parseToCairoHHMM } from '../utils/businessTime'
 
 const API = ((import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:4000') + '/api'
-
-const BUREAU_NAMES: Record<number, string> = {
-  3: 'CRN',
-  4: 'STV',
-  5: 'MRO',
-  6: 'SRG',
-  7: 'YN',
-  8: 'JC',
-  9: 'PAST',
-  10: 'PASC',
-}
-
-const ALL_BUREAU_IDS = Object.keys(BUREAU_NAMES).map(Number).sort((a, b) => a - b)
-
-function bureauLabel(id: number): string {
-  return BUREAU_NAMES[id] ? `${BUREAU_NAMES[id]} (${id})` : `Bureau ${id}`
-}
 
 type AgentRecap = {
   user_id: number
@@ -208,7 +192,7 @@ const CrmRecap: React.FC = () => {
   const profileLower = profil.toLowerCase()
   const isAdmin = ['admin', 'superadmin'].includes(profileLower)
 
-  // Bureaux gérés — même logique que ManagerDash / AgentMapList
+  // Bureaux et noms viennent du token login (pres → CRN/STV/etc, tod → 2.1/etc)
   const myBureauId: number = userDetail?.bureau_id ?? (userDetail?.bureaux?.[0] as any)?.id ?? 0
   const managedBureauIds: number[] = useMemo(() => {
     return Array.from(new Set(
@@ -217,13 +201,18 @@ const CrmRecap: React.FC = () => {
         .filter((id: number) => Number.isFinite(id) && id > 0)
     ))
   }, [userDetail?.bureaux])
+  // Noms : JWT en priorité, fallback sur noms connus (pres : CRN/STV/etc, tod : du JWT)
+  const bureauNameMap = useMemo(
+    () => buildBureauNameMap(userDetail?.bureaux),
+    [userDetail?.bureaux]
+  )
 
-  // Pour un admin : pas de filtre bureau côté API. Pour un crm_manager : son/ses bureaux
+  // Tous les rôles utilisent leurs bureaux du token
   const bureauIdsForApi: number[] = useMemo(() => {
-    return isAdmin
-      ? ALL_BUREAU_IDS
-      : (managedBureauIds.length > 0 ? managedBureauIds : (myBureauId ? [myBureauId] : []))
-  }, [isAdmin, managedBureauIds, myBureauId])
+    return managedBureauIds.length > 0
+      ? managedBureauIds
+      : (myBureauId ? [myBureauId] : [])
+  }, [managedBureauIds, myBureauId])
 
   const today = toBusinessISODate()
   const [dateTo, setDateTo] = useState<string>(today)
@@ -289,7 +278,7 @@ const CrmRecap: React.FC = () => {
 
       const mapped = okResponses.map((r) => ({
         bureau_id: r.bureau_id,
-        bureau_name: BUREAU_NAMES[r.bureau_id],
+        bureau_name: bureauNameMap[r.bureau_id],
         daterange: r.daterange,
         schedule_start: r.schedule_start,
         total_records: r.total_records,
@@ -300,7 +289,7 @@ const CrmRecap: React.FC = () => {
     } catch (err: any) {
       const fallbackBureaux = bureauxToFetch.map((id) => ({
         bureau_id: id,
-        bureau_name: BUREAU_NAMES[id],
+        bureau_name: bureauNameMap[id],
         daterange: { from: dateFrom, to: dateTo },
         schedule_start: MOCK_BUREAU_RECAP.schedule_start,
         total_records: id === MOCK_BUREAU_RECAP.bureau_id ? MOCK_BUREAU_RECAP.total_records : 0,
@@ -460,7 +449,7 @@ const CrmRecap: React.FC = () => {
                   {isAdmin && <option value="all">Tous les bureaux</option>}
                   {availableBureaux.map((id) => (
                     <option key={id} value={id}>
-                      {bureauLabel(id)}
+                      {bureauNameMap[id] ? `${bureauNameMap[id]} (${id})` : `Bureau ${id}`}
                     </option>
                   ))}
                   {/* Si plusieurs bureaux assignés au manager, "Tous ses bureaux" apparaît aussi */}
@@ -516,7 +505,7 @@ const CrmRecap: React.FC = () => {
                   return (
                     <article key={bureau.bureau_id} className="crm-bureau-card">
                       <div className="crm-bureau-head">
-                        <h2>{bureau.bureau_name ? `${bureau.bureau_name} (${bureau.bureau_id})` : bureauLabel(bureau.bureau_id)}</h2>
+                        <h2>{bureau.bureau_name ? `${bureau.bureau_name} (${bureau.bureau_id})` : `Bureau ${bureau.bureau_id}`}</h2>
                         <div className="crm-bureau-stats">
                           <span>{bureau.total_records} lignes</span>
                           <span>Seuil: {bureau.schedule_start}</span>

@@ -3,6 +3,7 @@ import axios from 'axios'
 import { Link } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logout } from '../features/auth/authSlice'
+import { buildBureauNameMap } from '../utils/bureaux'
 import {
   convertUtcHHMMToBusinessHHMM,
   formatTimeForBureau,
@@ -17,18 +18,6 @@ const MOIS = [
   'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
 ]
 const JOURS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
-
-const BUREAU_NAMES: Record<number, string> = {
-  3:  'CRN',
-  4:  'STV',
-  5:  'MRO',
-  6:  'SRG',
-  7:  'YN',
-  8:  'JC',
-  9:  'PAST',
-  10: 'PASC',
-}
-function bureauLabel(id: number) { return BUREAU_NAMES[id] ? `${BUREAU_NAMES[id]} (${id})` : `Bureau ${id}` }
 
 const PROFIL_LABEL: Record<string, string> = {
   ret:         'R',
@@ -156,19 +145,23 @@ const ManagerDash: React.FC = () => {
   const profileLower = profil.toLowerCase()
   const isAdmin = profil === 'admin' || profil === 'superadmin'
   const canOpenCrmRecap = ['crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower)
+    && userDetail?.tenant !== 'tod'
   const managedBureauIds = Array.from(new Set((userDetail?.bureaux ?? [])
     .map((b: any) => Number(b?.id))
     .filter((id) => Number.isFinite(id) && id > 0)
   ))
 
-  const BUREAU_IDS = [3, 4, 5, 6, 7, 8, 9, 10]
-  const bureauOptions = isAdmin
-    ? BUREAU_IDS
-    : (managedBureauIds.length > 0 ? managedBureauIds : (myBureauId ? [myBureauId] : []))
+  // Noms : JWT en priorité, fallback sur noms connus (pres : CRN/STV/etc, tod : du JWT)
+  const bureauNameMap = buildBureauNameMap(userDetail?.bureaux)
+  const getBureauLabel = (id: number) =>
+    bureauNameMap[id] ? `${bureauNameMap[id]} (${id})` : `Bureau ${id}`
+  const bureauOptions = managedBureauIds.length > 0
+    ? managedBureauIds
+    : (myBureauId ? [myBureauId] : [])
   const canSelectBureau = isAdmin || bureauOptions.length > 1
 
   const [selectedBureauId, setSelectedBureauId] = useState<number>(0)
-  const bureauId = selectedBureauId || myBureauId
+  const bureauId = selectedBureauId || (bureauOptions[0] ?? 0)
 
   // Date sélectionnée (vue jour)
   const [selectedDate, setSelectedDate] = useState<string>(todayISO())
@@ -362,11 +355,11 @@ const ManagerDash: React.FC = () => {
                 <select
                   id="bureau-select-dash"
                   className="bureau-select"
-                  value={selectedBureauId || myBureauId}
+                  value={selectedBureauId || (bureauOptions[0] ?? 0)}
                   onChange={(e) => setSelectedBureauId(Number(e.target.value))}
                 >
                   {bureauOptions.map((id) => (
-                    <option key={id} value={id}>{bureauLabel(id)}</option>
+                    <option key={id} value={id}>{getBureauLabel(id)}</option>
                   ))}
                 </select>
               </div>

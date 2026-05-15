@@ -5,8 +5,6 @@ import { toBusinessISODate } from '../../utils/businessTime'
 
 const API = ((import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:4000') + '/api'
 
-const BUREAU_IDS_ALL = [3, 4, 5, 6, 7, 8, 9, 10]
-
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type PresenceLog = {
@@ -151,16 +149,10 @@ export const fetchAllBureauxData = createAsyncThunk(
       const state = getState() as RootState
       const user  = state.user.userDetail
 
-      // Découvrir les bureau_ids depuis les alertes (déjà filtrées par tenant côté backend)
-      const alertsRes = await axios.get<AlertsResponse>(`${API}/presence/today/alerts`)
-      let bureauIds = [...new Set(alertsRes.data.agents.map((a) => a.bureau_id))].filter(Boolean) as number[]
-
-      // Fallback : utiliser les bureaux du user connecté si les alertes ont bureau_id null
-      if (bureauIds.length === 0) {
-        const fromBureaux = (user?.bureaux ?? []).map((b: any) => Number(b?.id)).filter((id) => id > 0)
-        const fromBureauId = user?.bureau_id ? [Number(user.bureau_id)] : []
-        bureauIds = [...new Set([...fromBureaux, ...fromBureauId])]
-      }
+      // Bureaux viennent du token login (source unique, filtrée par tenant côté backend)
+      const fromBureaux = (user?.bureaux ?? []).map((b: any) => Number(b?.id)).filter((id: number) => id > 0)
+      const fromBureauId = user?.bureau_id ? [Number(user.bureau_id)] : []
+      const bureauIds = [...new Set([...fromBureaux, ...fromBureauId])]
 
       if (bureauIds.length === 0) return {}
 

@@ -5,6 +5,7 @@ import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logout } from '../features/auth/authSlice'
 import { buildBureauNameMap } from '../utils/bureaux'
 import { toBusinessISODate, formatIsoTimeInBusinessTZ, convertUtcHHMMToBusinessHHMM, parseToCairoHHMM } from '../utils/businessTime'
+import { useLang, getLocale } from '../utils/i18n'
 
 const API = ((import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:4000') + '/api'
 
@@ -148,18 +149,18 @@ function formatCheckinHHMM(day: AgentDetailDay): string | null {
   return parseToCairoHHMM(raw)
 }
 
-function formatDayLabel(iso: string): string {
+function formatDayLabel(iso: string, locale: string): string {
   const d = new Date(iso + 'T00:00:00')
   return d
-    .toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'short' })
+    .toLocaleDateString(locale, { weekday: 'long', day: '2-digit', month: 'short' })
     .replace('.', '')
 }
 
-function formatMonthLabel(ym: string): string {
+function formatMonthLabel(ym: string, locale: string): string {
   const [y, m] = ym.split('-').map(Number)
   if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return ym
   const d = new Date(y, m - 1, 1)
-  return d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+  return d.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
 }
 
 function timeToSeconds(value: string | null): number | null {
@@ -186,6 +187,8 @@ function isRetardDay(day: AgentDetailDay, scheduleStart: string): boolean {
 const CrmRecap: React.FC = () => {
   const dispatch = useAppDispatch()
   const userDetail = useAppSelector((s) => s.user.userDetail)
+  const lang = useLang()
+  const locale = getLocale(lang)
 
   const username = userDetail?.username ?? ''
   const profil = String(userDetail?.profil ?? '')
@@ -390,7 +393,7 @@ const CrmRecap: React.FC = () => {
       <header className="presence-header">
         <div className="header-left">
           <span className="header-logo">📈</span>
-          <span className="header-title">Récap CRM — Congés / Absences / Retards</span>
+          <span className="header-title">{lang === 'en' ? 'CRM Recap — Leave / Absences / Lates' : 'Récap CRM — Congés / Absences / Retards'}</span>
         </div>
         <div className="header-right">
           <span className="header-user">
@@ -400,28 +403,28 @@ const CrmRecap: React.FC = () => {
 
           {isAdmin ? (
             <>
-              <Link to="/manager" className="btn-manager-link">📊 Général</Link>
-              <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
-              <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
-              <span className="btn-manager-link btn-manager-link--active">📈 CRM Récap</span>
+              <Link to="/manager" className="btn-manager-link">{lang === 'en' ? '📊 Overview' : '📊 Général'}</Link>
+              <Link to="/manager/day" className="btn-manager-link">{lang === 'en' ? '📅 Day View' : '📅 Journée'}</Link>
+              <Link to="/manager/agents" className="btn-manager-link">{lang === 'en' ? '👥 Agents' : '👥 Agents'}</Link>
+              <span className="btn-manager-link btn-manager-link--active">{lang === 'en' ? '📈 CRM Recap' : '📈 CRM Récap'}</span>
             </>
           ) : (
             <>
-              <Link to="/pointer" className="btn-manager-link">⏱ Pointer</Link>
-              <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
-              <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
-              <span className="btn-manager-link btn-manager-link--active">📈 CRM Récap</span>
+              <Link to="/pointer" className="btn-manager-link">{lang === 'en' ? '⏱ Clock' : '⏱ Pointer'}</Link>
+              <Link to="/manager/day" className="btn-manager-link">{lang === 'en' ? '📅 Day View' : '📅 Journée'}</Link>
+              <Link to="/manager/agents" className="btn-manager-link">{lang === 'en' ? '👥 Agents' : '👥 Agents'}</Link>
+              <span className="btn-manager-link btn-manager-link--active">{lang === 'en' ? '📈 CRM Recap' : '📈 CRM Récap'}</span>
             </>
           )}
 
-          <button className="btn-logout" onClick={() => dispatch(logout())}>Déconnexion</button>
+          <button className="btn-logout" onClick={() => dispatch(logout())}>{lang === 'en' ? 'Logout' : 'Déconnexion'}</button>
         </div>
       </header>
 
       <div className="manager-layout">
         <section className="crm-recap-top">
           <div>
-            <h1 className="crm-recap-title">Synthèse par bureau et par agent</h1>
+            <h1 className="crm-recap-title">{lang === 'en' ? 'Summary by office and by agent' : 'Synthèse par bureau et par agent'}</h1>
             <p className="crm-recap-subtitle">
               {dateFrom} → {dateTo}
             </p>
@@ -431,12 +434,12 @@ const CrmRecap: React.FC = () => {
         {error && <div className="alert-error">{error}</div>}
 
         {loading ? (
-          <div className="loading-state">Chargement du récap...</div>
+          <div className="loading-state">{lang === 'en' ? 'Loading recap...' : 'Chargement du récap...'}</div>
         ) : (
           <>
             <section className="crm-toolbar">
               <div className="crm-toolbar-field">
-                <label htmlFor="crm-bureau">Bureau</label>
+                <label htmlFor="crm-bureau">{lang === 'en' ? 'Office' : 'Bureau'}</label>
                 <select
                   id="crm-bureau"
                   className="bureau-select"
@@ -446,7 +449,7 @@ const CrmRecap: React.FC = () => {
                   }}
                 >
                   {/* Admin voit "Tous" + chaque bureau. CRM manager voit uniquement ses bureaux */}
-                  {isAdmin && <option value="all">Tous les bureaux</option>}
+                  {isAdmin && <option value="all">{lang === 'en' ? 'All offices' : 'Tous les bureaux'}</option>}
                   {availableBureaux.map((id) => (
                     <option key={id} value={id}>
                       {bureauNameMap[id] ? `${bureauNameMap[id]} (${id})` : `Bureau ${id}`}
@@ -454,13 +457,13 @@ const CrmRecap: React.FC = () => {
                   ))}
                   {/* Si plusieurs bureaux assignés au manager, "Tous ses bureaux" apparaît aussi */}
                   {!isAdmin && bureauIdsForApi.length > 1 && (
-                    <option value="all">Tous mes bureaux</option>
+                    <option value="all">{lang === 'en' ? 'All my offices' : 'Tous mes bureaux'}</option>
                   )}
                 </select>
               </div>
 
               <div className="crm-toolbar-field">
-                <label htmlFor="crm-from">Du</label>
+                <label htmlFor="crm-from">{lang === 'en' ? 'From' : 'Du'}</label>
                 <input
                   id="crm-from"
                   type="date"
@@ -470,7 +473,7 @@ const CrmRecap: React.FC = () => {
               </div>
 
               <div className="crm-toolbar-field">
-                <label htmlFor="crm-to">Au</label>
+                <label htmlFor="crm-to">{lang === 'en' ? 'To' : 'Au'}</label>
                 <input
                   id="crm-to"
                   type="date"
@@ -480,7 +483,7 @@ const CrmRecap: React.FC = () => {
               </div>
 
               <div className="crm-toolbar-field crm-toolbar-field-search">
-                <label htmlFor="crm-search">Agent / Profil</label>
+                <label htmlFor="crm-search">{lang === 'en' ? 'Agent / Profile' : 'Agent / Profil'}</label>
                 <input
                   id="crm-search"
                   type="text"
@@ -490,12 +493,12 @@ const CrmRecap: React.FC = () => {
                 />
               </div>
 
-              <button className="btn-refresh" onClick={fetchRecap}>Rafraîchir</button>
+              <button className="btn-refresh" onClick={fetchRecap}>{lang === 'en' ? 'Refresh' : 'Rafraîchir'}</button>
             </section>
 
             <section className="crm-bureaux-list">
               {visibleBureaux.length === 0 ? (
-                <div className="week-loading">Aucune donnée pour ce filtre.</div>
+                <div className="week-loading">{lang === 'en' ? 'No data for this filter.' : 'Aucune donnée pour ce filtre.'}</div>
               ) : (
                 visibleBureaux.map((bureau) => {
                   const bAbs = bureau.rows.reduce((acc, a) => acc + a.absences_count, 0)
@@ -507,11 +510,11 @@ const CrmRecap: React.FC = () => {
                       <div className="crm-bureau-head">
                         <h2>{bureau.bureau_name ? `${bureau.bureau_name} (${bureau.bureau_id})` : `Bureau ${bureau.bureau_id}`}</h2>
                         <div className="crm-bureau-stats">
-                          <span>{bureau.total_records} lignes</span>
-                          <span>Seuil: {bureau.schedule_start}</span>
-                          <span className="crm-pill crm-pill-abs">Abs: {bAbs}</span>
-                          <span className="crm-pill crm-pill-ret">Ret: {bRet}</span>
-                          <span className="crm-pill crm-pill-con">Congé: {bCon}</span>
+                          <span>{bureau.total_records} {lang === 'en' ? 'rows' : 'lignes'}</span>
+                          <span>{lang === 'en' ? 'Threshold:' : 'Seuil:'} {bureau.schedule_start}</span>
+                          <span className="crm-pill crm-pill-abs">{lang === 'en' ? 'Abs' : 'Abs'}: {bAbs}</span>
+                          <span className="crm-pill crm-pill-ret">{lang === 'en' ? 'Late' : 'Ret'}: {bRet}</span>
+                          <span className="crm-pill crm-pill-con">{lang === 'en' ? 'Leave' : 'Congé'}: {bCon}</span>
                         </div>
                       </div>
 
@@ -520,11 +523,11 @@ const CrmRecap: React.FC = () => {
                           <thead>
                             <tr>
                               <th>Agent</th>
-                              <th>Mois</th>
-                              <th>Absences</th>
-                              <th>Retards</th>
-                              <th>Congés</th>
-                              <th>Total alertes</th>
+                              <th>{lang === 'en' ? 'Month' : 'Mois'}</th>
+                              <th>{lang === 'en' ? 'Absences' : 'Absences'}</th>
+                              <th>{lang === 'en' ? 'Lates' : 'Retards'}</th>
+                              <th>{lang === 'en' ? 'Leave' : 'Congés'}</th>
+                              <th>{lang === 'en' ? 'Total alerts' : 'Total alertes'}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -544,7 +547,7 @@ const CrmRecap: React.FC = () => {
                                       {row.username}
                                     </button>
                                   </td>
-                                  <td>{formatMonthLabel(row.month)}</td>
+                                  <td>{formatMonthLabel(row.month, locale)}</td>
                                   <td>{row.absences_count}</td>
                                   <td>{row.retards_count}</td>
                                   <td>{row.conges_count}</td>
@@ -554,7 +557,7 @@ const CrmRecap: React.FC = () => {
                                   <tr className="crm-detail-row">
                                     <td colSpan={6}>
                                       <div className="crm-detail-panel">
-                                        {detailLoading && <div className="week-loading">Chargement du détail agent...</div>}
+                                        {detailLoading && <div className="week-loading">{lang === 'en' ? 'Loading agent detail...' : 'Chargement du détail agent...'}</div>}
                                         {detailError && <div className="alert-error">{detailError}</div>}
 
                                         {!detailLoading && agentDetail && (
@@ -565,7 +568,7 @@ const CrmRecap: React.FC = () => {
                                               </div>
                                               <div className="crm-detail-meta">
                                                 <span>Seuil: {agentDetail.schedule_start}</span>
-                                                <span>Total jours: {agentDetail.total_days}</span>
+                                                <span>{lang === 'en' ? 'Total days' : 'Total jours'}: {agentDetail.total_days}</span>
                                               </div>
                                             </div>
 
@@ -580,17 +583,17 @@ const CrmRecap: React.FC = () => {
                                               <table className="crm-days-table">
                                                 <thead>
                                                   <tr>
-                                                    <th>Date</th>
-                                                    <th>Statut</th>
+                                                    <th>{lang === 'en' ? 'Date' : 'Date'}</th>
+                                                    <th>{lang === 'en' ? 'Status' : 'Statut'}</th>
                                                     <th>Checkin</th>
-                                                    <th>Retard</th>
+                                                    <th>{lang === 'en' ? 'Late' : 'Retard'}</th>
                                                     <th>Note</th>
                                                   </tr>
                                                 </thead>
                                                 <tbody>
                                                   {agentDetail.days.map((d) => (
                                                     <tr key={`${d.date}-${d.checkin_time ?? 'no-checkin'}`}>
-                                                      <td>{formatDayLabel(d.date)}</td>
+                                                      <td>{formatDayLabel(d.date, locale)}</td>
                                                       <td>
                                                         <span className={`daily-status-label ${statusClass(d.status)}`}>
                                                           {statusLabel(d.status)}
@@ -599,9 +602,9 @@ const CrmRecap: React.FC = () => {
                                                       <td>{formatCheckinHHMM(d) ?? '—'}</td>
                                                       <td>
                                                         {isRetardDay(d, agentDetail.schedule_start) ? (
-                                                          <span className="crm-retard-badge crm-retard-badge--yes">Oui</span>
+                                                          <span className="crm-retard-badge crm-retard-badge--yes">{lang === 'en' ? 'Yes' : 'Oui'}</span>
                                                         ) : (
-                                                          <span className="crm-retard-badge crm-retard-badge--no">Non</span>
+                                                          <span className="crm-retard-badge crm-retard-badge--no">{lang === 'en' ? 'No' : 'Non'}</span>
                                                         )}
                                                       </td>
                                                       <td>{d.note ?? '—'}</td>

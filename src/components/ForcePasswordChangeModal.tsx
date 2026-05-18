@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import axios from "axios";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { setUserDetail } from "../features/user/userSlice";
+import { useLang } from "../utils/i18n";
 
 const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) || "http://localhost:4000") + "/api";
 const CHANGE_PASSWORD_URL = `${API_BASE}/users/update`;
@@ -14,6 +15,7 @@ const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> = ({ onS
   const dispatch = useAppDispatch();
   const userDetail = useAppSelector((state) => state.user.userDetail);
   const token = useAppSelector((state) => state.auth.token);
+  const lang = useLang();
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -27,19 +29,19 @@ const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> = ({ onS
     setError(null);
 
     if (newPassword.length < 6) {
-      setError("Le mot de passe doit contenir au moins 6 caractères.");
+      setError(lang === 'en' ? 'Password must be at least 6 characters.' : 'Le mot de passe doit contenir au moins 6 caractères.');
       return;
     }
     if (!/[0-9]/.test(newPassword)) {
-      setError("Le mot de passe doit contenir au moins un chiffre.");
+      setError(lang === 'en' ? 'Password must contain at least one number.' : 'Le mot de passe doit contenir au moins un chiffre.');
       return;
     }
     if (!/[^a-zA-Z0-9]/.test(newPassword)) {
-      setError("Le mot de passe doit contenir au moins un symbole (ex: @, #, !, ...).");
+      setError(lang === 'en' ? 'Password must contain at least one symbol (e.g. @, #, !, ...).' : 'Le mot de passe doit contenir au moins un symbole (ex: @, #, !, ...).');
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError("Les mots de passe ne correspondent pas.");
+      setError(lang === 'en' ? 'Passwords do not match.' : 'Les mots de passe ne correspondent pas.');
       return;
     }
 
@@ -57,7 +59,7 @@ const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> = ({ onS
       onSuccess();
     } catch (err: any) {
       const message =
-        err?.response?.data?.message || err.message || "Erreur lors du changement de mot de passe.";
+        err?.response?.data?.message || err.message || (lang === 'en' ? 'Error changing password.' : 'Erreur lors du changement de mot de passe.');
       setError(message);
     } finally {
       setLoading(false);
@@ -136,10 +138,12 @@ const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> = ({ onS
             </svg>
           </div>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#0f172a" }}>
-            Changement de mot de passe requis
+            {lang === 'en' ? 'Password change required' : 'Changement de mot de passe requis'}
           </h2>
           <p style={{ margin: "8px 0 0", fontSize: 14, color: "#64748b" }}>
-            Pour des raisons de sécurité, vous devez définir un nouveau mot de passe avant de continuer.
+            {lang === 'en'
+              ? 'For security reasons, you must set a new password before continuing.'
+              : 'Pour des raisons de s\u00e9curit\u00e9, vous devez d\u00e9finir un nouveau mot de passe avant de continuer.'}
           </p>
         </div>
 
@@ -147,14 +151,14 @@ const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> = ({ onS
           {/* Nouveau mot de passe */}
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>
-              Nouveau mot de passe
+              {lang === 'en' ? 'New password' : 'Nouveau mot de passe'}
             </label>
             <div style={{ position: "relative" }}>
               <input
                 type={showNew ? "text" : "password"}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Minimum 6 caractères"
+                placeholder={lang === 'en' ? 'Minimum 6 characters' : 'Minimum 6 caractères'}
                 style={inputStyle}
                 autoComplete="new-password"
                 required
@@ -171,9 +175,9 @@ const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> = ({ onS
             {/* Indicateurs de règles */}
             <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 2 }}>
               {[
-                { label: "Au moins 6 caractères", ok: newPassword.length >= 6 },
-                { label: "Au moins un chiffre (0-9)", ok: /[0-9]/.test(newPassword) },
-                { label: "Au moins un symbole (@, #, !, ...)", ok: /[^a-zA-Z0-9]/.test(newPassword) },
+              { label: lang === 'en' ? 'At least 6 characters' : 'Au moins 6 caractères', ok: newPassword.length >= 6 },
+                { label: lang === 'en' ? 'At least one number (0-9)' : 'Au moins un chiffre (0-9)', ok: /[0-9]/.test(newPassword) },
+                { label: lang === 'en' ? 'At least one symbol (@, #, !, ...)' : 'Au moins un symbole (@, #, !, ...)', ok: /[^a-zA-Z0-9]/.test(newPassword) },
               ].map(({ label, ok }) => (
                 <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
                   <span style={{ color: ok ? "#22c55e" : "#94a3b8", fontWeight: 700, fontSize: 14, lineHeight: 1 }}>
@@ -188,14 +192,14 @@ const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> = ({ onS
           {/* Confirmation */}
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>
-              Confirmer le mot de passe
+              {lang === 'en' ? 'Confirm password' : 'Confirmer le mot de passe'}
             </label>
             <div style={{ position: "relative" }}>
               <input
                 type={showConfirm ? "text" : "password"}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Répétez le mot de passe"
+                placeholder={lang === 'en' ? 'Repeat password' : 'Répétez le mot de passe'}
                 style={inputStyle}
                 autoComplete="new-password"
                 required
@@ -245,7 +249,7 @@ const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> = ({ onS
               transition: "background 0.2s",
             }}
           >
-            {loading ? "Enregistrement..." : "Définir mon mot de passe"}
+            {loading ? (lang === 'en' ? 'Saving...' : 'Enregistrement...') : (lang === 'en' ? 'Set my password' : 'Définir mon mot de passe')}
           </button>
         </form>
       </div>

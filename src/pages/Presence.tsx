@@ -9,16 +9,9 @@ import {
   getBusinessNowDate,
   toBusinessYearMonth,
 } from '../utils/businessTime'
+import { useLang, getJours, getJoursCourt, getMois } from '../utils/i18n'
 
 const API = ((import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:4000') + '/api'
-
-// Jours et mois en français
-const JOURS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi']
-const JOURS_COURT = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
-const MOIS = [
-  'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
-  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
-]
 
 type PresenceLog = {
   id: number
@@ -88,13 +81,17 @@ const formatTime = (isoString: string): string => {
   return formatIsoTimeInBusinessTZ(isoString, true)
 }
 
-const formatFullDate = (now: Date): string => {
-  return `${JOURS[now.getDay()]} ${now.getDate()} ${MOIS[now.getMonth()]} ${now.getFullYear()}`
+const formatFullDate = (now: Date, jours: string[], mois: string[]): string => {
+  return `${jours[now.getDay()]} ${now.getDate()} ${mois[now.getMonth()]} ${now.getFullYear()}`
 }
 
 const Presence: React.FC = () => {
   const dispatch = useAppDispatch()
   const userDetail = useAppSelector((s) => s.user.userDetail)
+  const lang = useLang()
+  const JOURS = getJours(lang)
+  const JOURS_COURT = getJoursCourt(lang)
+  const MOIS = getMois(lang)
 
   const [now, setNow] = useState(getBusinessNowDate())
   const [todayData, setTodayData] = useState<TodayData | null>(null)
@@ -133,7 +130,7 @@ const Presence: React.FC = () => {
       const res = await axios.get<TodayData>(`${API}/presence/today/${userId}`)
       setTodayData(res.data)
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Erreur lors du chargement')
+      setError(err?.response?.data?.message || (lang === 'en' ? 'Loading error' : 'Erreur lors du chargement'))
     } finally {
       setLoading(false)
     }
@@ -200,7 +197,7 @@ const Presence: React.FC = () => {
       await fetchToday()
       await fetchWeek()
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Erreur lors du pointage IN')
+      setError(err?.response?.data?.message || (lang === 'en' ? 'Check-in error' : 'Erreur lors du pointage IN'))
     } finally {
       setActionLoading(false)
     }
@@ -221,7 +218,7 @@ const Presence: React.FC = () => {
       await fetchToday()
       await fetchWeek()
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Erreur lors du pointage OUT')
+      setError(err?.response?.data?.message || (lang === 'en' ? 'Check-out error' : 'Erreur lors du pointage OUT'))
     } finally {
       setActionLoading(false)
     }
@@ -242,7 +239,7 @@ const Presence: React.FC = () => {
       <header className="presence-header">
         <div className="header-left">
           <span className="header-logo">⏱</span>
-          <span className="header-title">Pointage</span>
+          <span className="header-title">{lang === 'en' ? 'Attendance' : 'Pointage'}</span>
         </div>
         <div className="header-right">
           <span className="header-user">
@@ -252,15 +249,15 @@ const Presence: React.FC = () => {
           {['manager', 'man', 'crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower) && (
             <>
               {['admin', 'superadmin'].includes(profileLower)
-                ? <Link to="/manager" className="btn-manager-link">📊 Général</Link>
-                : <span className="btn-manager-link btn-manager-link--active">⏱ Pointer</span>
+                ? <Link to="/manager" className="btn-manager-link">{lang === 'en' ? '📊 Overview' : '📊 Général'}</Link>
+                : <span className="btn-manager-link btn-manager-link--active">⏱ {lang === 'en' ? 'Clock' : 'Pointer'}</span>
               }
-              <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
+              <Link to="/manager/day" className="btn-manager-link">{lang === 'en' ? '📅 Day View' : '📅 Journée'}</Link>
               <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
-              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">📈 CRM Récap</Link>}
+              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">{lang === 'en' ? '📈 CRM Recap' : '📈 CRM Récap'}</Link>}
             </>
           )}
-          <button className="btn-logout" onClick={handleLogout}>Déconnexion</button>
+          <button className="btn-logout" onClick={handleLogout}>{lang === 'en' ? 'Logout' : 'Déconnexion'}</button>
         </div>
       </header>
 
@@ -269,19 +266,19 @@ const Presence: React.FC = () => {
         <main className="presence-main">
           {/* Horloge */}
           <section className="clock-section">
-            <div className="clock-date">{formatFullDate(now)}</div>
+            <div className="clock-date">{formatFullDate(now, JOURS, MOIS)}</div>
             <div className="clock-time">
-              {now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              {now.toLocaleTimeString(lang === 'en' ? 'en-US' : 'fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </div>
             <div className="clock-week">
-              Semaine {getWeekNumber(now)} — Jour {getDayOfYear(now)} de l'année
+              {lang === 'en' ? `Week ${getWeekNumber(now)} — Day ${getDayOfYear(now)} of the year` : `Semaine ${getWeekNumber(now)} — Jour ${getDayOfYear(now)} de l'année`}
             </div>
           </section>
 
           {error && <div className="alert-error">{error}</div>}
 
           {loading ? (
-            <div className="loading-state">Chargement...</div>
+            <div className="loading-state">{lang === 'en' ? 'Loading...' : 'Chargement...'}</div>
           ) : (
             <>
               {/* Statut actuel */}
@@ -289,10 +286,10 @@ const Presence: React.FC = () => {
                 <div className={`status-badge ${isIn ? 'status-in' : 'status-out'}`}>
                   <span className="status-dot" />
                   {isIn
-                    ? 'PRÉSENT'
+                    ? (lang === 'en' ? 'PRESENT' : 'PRÉSENT')
                     : lastAction === 'out'
-                      ? 'SORTI'
-                      : 'PAS ENCORE POINTÉ'}
+                      ? (lang === 'en' ? 'CLOCKED OUT' : 'SORTI')
+                      : (lang === 'en' ? 'NOT CLOCKED IN' : 'PAS ENCORE POINTÉ')}
                 </div>
                 {/* N'afficher le statut daily que s'il apporte une info supplémentaire (partiel, congé, absent) */}
                 {todayData?.daily && !['present'].includes(todayData.daily.status) && (
@@ -312,7 +309,7 @@ const Presence: React.FC = () => {
                     onClick={handleCheckin}
                     disabled={actionLoading}
                   >
-                    {actionLoading ? '...' : '▶ Pointer ARRIVÉE'}
+                    {actionLoading ? '...' : (lang === 'en' ? '▶ Clock IN' : '▶ Pointer ARRIVÉE')}
                   </button>
                 ) : (
                   <button
@@ -320,7 +317,7 @@ const Presence: React.FC = () => {
                     onClick={handleCheckout}
                     disabled={actionLoading}
                   >
-                    {actionLoading ? '...' : '■ Pointer DÉPART'}
+                    {actionLoading ? '...' : (lang === 'en' ? '■ Clock OUT' : '■ Pointer DÉPART')}
                   </button>
                 )}
               </section>
@@ -328,23 +325,23 @@ const Presence: React.FC = () => {
               {/* Message du manager */}
               {todayData?.daily?.note && (
                 <section className="manager-note-section">
-                  <div className="manager-note-label">📌 Message du manager</div>
+                  <div className="manager-note-label">{lang === 'en' ? '📌 Manager note' : '📌 Message du manager'}</div>
                   <p className="manager-note-text">{todayData.daily.note}</p>
                 </section>
               )}
 
               {/* Historique du jour */}
               <section className="logs-section">
-                <h3>Pointages d'aujourd'hui</h3>
+                <h3>{lang === 'en' ? "Today's records" : "Pointages d'aujourd'hui"}</h3>
                 {todayLogs.length === 0 ? (
-                  <p className="logs-empty">Aucun pointage enregistré aujourd'hui</p>
+                  <p className="logs-empty">{lang === 'en' ? 'No records today' : "Aucun pointage enregistré aujourd'hui"}</p>
                 ) : (
                   <ul className="logs-list">
                     {todayLogs.map((log) => (
                       <li key={log.id} className={`log-item log-${log.type}`}>
                         <div className="log-item-left">
                           <span className={`log-type-badge log-type-${log.type}`}>
-                            {log.type === 'in' ? '▶ ARRIVÉE' : '■ DÉPART'}
+                            {log.type === 'in' ? (lang === 'en' ? '▶ IN' : '▶ ARRIVÉE') : (lang === 'en' ? '■ OUT' : '■ DÉPART')}
                           </span>
                           <span className="log-time">{formatTime(log.timestamp)}</span>
                         </div>
@@ -372,13 +369,13 @@ const Presence: React.FC = () => {
               className={`panel-tab ${activePanel === 'week' ? 'panel-tab--active' : ''}`}
               onClick={() => setActivePanel('week')}
             >
-              Semaine
+              {lang === 'en' ? 'Week' : 'Semaine'}
             </button>
             <button
               className={`panel-tab ${activePanel === 'month' ? 'panel-tab--active' : ''}`}
               onClick={() => setActivePanel('month')}
             >
-              Mois
+              {lang === 'en' ? 'Month' : 'Mois'}
             </button>
           </div>
 
@@ -386,7 +383,7 @@ const Presence: React.FC = () => {
           {activePanel === 'week' && (
             <>
               <div className="week-panel-header">
-                <h2>Semaine {getWeekNumber(now)}</h2>
+                <h2>{lang === 'en' ? `Week ${getWeekNumber(now)}` : `Semaine ${getWeekNumber(now)}`}</h2>
                 {weekData && (
                   <span className="week-range">
                     {formatShortDate(weekData.from)} → {formatShortDate(weekData.to)}
@@ -395,7 +392,7 @@ const Presence: React.FC = () => {
               </div>
 
               {weekLoading ? (
-                <div className="week-loading">Chargement...</div>
+                <div className="week-loading">{lang === 'en' ? 'Loading...' : 'Chargement...'}</div>
               ) : (
                 <ul className="week-list">
                   {getWeekDays(now).map(({ date, dayIndex }) => {
@@ -426,14 +423,14 @@ const Presence: React.FC = () => {
                             <>
                               <span className={`week-status-dot ws-${displayStatus}`} />
                               <span className={`week-status-text ws-text-${displayStatus}`}>
-                                {statusLabel(displayStatus)}
-                                {liveStatus && <span className="week-live-dot" title="En cours" />}
+                                {statusLabel(displayStatus, lang)}
+                                {liveStatus && <span className="week-live-dot" title={lang === 'en' ? 'In progress' : 'En cours'} />}
                               </span>
                             </>
                           ) : date > now ? (
                             <span className="week-status-future">—</span>
                           ) : (
-                            <span className="week-status-missing">Non renseigné</span>
+                            <span className="week-status-missing">{lang === 'en' ? 'Not set' : 'Non renseigné'}</span>
                           )}
                           {firstIn && <span className="week-time week-time-in">▶ {formatTime(firstIn.timestamp)}</span>}
                           {lastOut && <span className="week-time week-time-out">■ {formatTime(lastOut.timestamp)}</span>}
@@ -453,7 +450,7 @@ const Presence: React.FC = () => {
                 <div className="week-summary">
                   <div className="week-summary-item">
                     <span className="ws-count ws-count-present">{weekData.week.filter((d) => d.status === 'present').length}</span>
-                    <span>Présent</span>
+                    <span>{lang === 'en' ? 'Present' : 'Présent'}</span>
                   </div>
                   <div className="week-summary-item">
                     <span className="ws-count ws-count-absent">{weekData.week.filter((d) => d.status === 'absent').length}</span>
@@ -461,11 +458,11 @@ const Presence: React.FC = () => {
                   </div>
                   <div className="week-summary-item">
                     <span className="ws-count ws-count-conge">{weekData.week.filter((d) => d.status === 'conge').length}</span>
-                    <span>Congé</span>
+                    <span>{lang === 'en' ? 'Leave' : 'Congé'}</span>
                   </div>
                   <div className="week-summary-item">
                     <span className="ws-count ws-count-partial">{weekData.week.filter((d) => d.status === 'partial').length}</span>
-                    <span>Partiel</span>
+                    <span>{lang === 'en' ? 'Partial' : 'Partiel'}</span>
                   </div>
                 </div>
               )}
@@ -491,21 +488,21 @@ const Presence: React.FC = () => {
                 <div className="month-summary">
                   <div className="month-stat">
                     <span className="month-stat-num" style={{ color: '#22c55e' }}>{monthData.summary.days_present}</span>
-                    <span className="month-stat-label">Jours présent</span>
+                    <span className="month-stat-label">{lang === 'en' ? 'Days present' : 'Jours présent'}</span>
                   </div>
                   <div className="month-stat">
                     <span className="month-stat-num" style={{ color: 'var(--color-accent)' }}>{monthData.summary.total_checkin}</span>
-                    <span className="month-stat-label">Arrivées</span>
+                    <span className="month-stat-label">{lang === 'en' ? 'Check-ins' : 'Arrivées'}</span>
                   </div>
                   <div className="month-stat">
                     <span className="month-stat-num" style={{ color: 'var(--color-text-muted)' }}>{monthData.summary.total_checkout}</span>
-                    <span className="month-stat-label">Départs</span>
+                    <span className="month-stat-label">{lang === 'en' ? 'Check-outs' : 'Départs'}</span>
                   </div>
                 </div>
               )}
 
               {monthLoading ? (
-                <div className="week-loading">Chargement...</div>
+                <div className="week-loading">{lang === 'en' ? 'Loading...' : 'Chargement...'}</div>
               ) : (
                 <ul className="month-day-list">
                   {(monthData?.days ?? []).map((day) => (
@@ -525,7 +522,7 @@ const Presence: React.FC = () => {
                               <div className="month-day-inline-times">
                                 {firstIn  && <span className="week-time week-time-in">▶ {formatTime(firstIn.timestamp)}</span>}
                                 {lastOut  && <span className="week-time week-time-out">■ {formatTime(lastOut.timestamp)}</span>}
-                                {!firstIn && !lastOut && <span className={`ws-text-${day.status}`} style={{ fontSize: '0.78rem' }}>{statusLabel(day.status)}</span>}
+                                {!firstIn && !lastOut && <span className={`ws-text-${day.status}`} style={{ fontSize: '0.78rem' }}>{statusLabel(day.status, lang)}</span>}
                               </div>
                             )
                           })()}
@@ -556,7 +553,7 @@ const Presence: React.FC = () => {
                     </li>
                   ))}
                   {!monthLoading && monthData?.days.length === 0 && (
-                    <li className="week-loading">Aucune donnée ce mois-ci</li>
+                    <li className="week-loading">{lang === 'en' ? 'No data this month' : 'Aucune donnée ce mois-ci'}</li>
                   )}
                 </ul>
               )}
@@ -583,14 +580,14 @@ function getDayOfYear(d: Date): number {
   return Math.floor(diff / 86400000)
 }
 
-function statusLabel(status: PresenceDaily['status']): string {
-  const labels: Record<PresenceDaily['status'], string> = {
-    present: 'Présent',
-    absent: 'Absent',
-    partial: 'Partiel',
-    conge: 'Congé',
+function statusLabel(status: PresenceDaily['status'], lang: 'fr' | 'en' = 'fr'): string {
+  const labels: Record<PresenceDaily['status'], { fr: string; en: string }> = {
+    present: { fr: 'Présent',  en: 'Present' },
+    absent:  { fr: 'Absent',   en: 'Absent'  },
+    partial: { fr: 'Partiel',  en: 'Partial' },
+    conge:   { fr: 'Congé',    en: 'Leave'   },
   }
-  return labels[status] ?? status
+  return labels[status]?.[lang] ?? status
 }
 
 // Retourne les 7 jours de la semaine ISO (lundi → dimanche) contenant `d`

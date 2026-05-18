@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logout } from '../features/auth/authSlice'
 import { buildBureauNameMap } from '../utils/bureaux'
+import { useLang } from '../utils/i18n'
 
 const API = ((import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:4000') + '/api'
 
@@ -40,6 +41,7 @@ type AgentMap = {
 const AgentMapList: React.FC = () => {
   const dispatch = useAppDispatch()
   const userDetail = useAppSelector((s) => s.user.userDetail)
+  const lang = useLang()
 
   const myBureauId = userDetail?.bureau_id ?? (userDetail?.bureaux?.[0] as any)?.id ?? 0
   const username = userDetail?.username ?? ''
@@ -115,15 +117,15 @@ const AgentMapList: React.FC = () => {
   const handleCreateAgent = async () => {
     // Defense in depth : ne jamais appeler l'API si le tenant n'est pas tod
     if (!isTodTenant) {
-      setCreateError('Action non autorisée pour ce tenant.')
+      setCreateError(lang === 'en' ? 'Action not authorized for this tenant.' : 'Action non autorisée pour ce tenant.')
       return
     }
     if (!createForm.username.trim() || !createForm.password.trim()) {
-      setCreateError('Username et mot de passe sont obligatoires.')
+      setCreateError(lang === 'en' ? 'Username and password are required.' : 'Username et mot de passe sont obligatoires.')
       return
     }
     if (createForm.bureauxIds.length === 0) {
-      setCreateError('Sélectionne au moins un bureau.')
+      setCreateError(lang === 'en' ? 'Select at least one office.' : 'Sélectionne au moins un bureau.')
       return
     }
     setCreating(true)
@@ -141,7 +143,7 @@ const AgentMapList: React.FC = () => {
       closeCreateAgent()
       await fetchAgents()
     } catch (err: any) {
-      setCreateError(err?.response?.data?.message || 'Erreur lors de la création.')
+      setCreateError(err?.response?.data?.message || (lang === 'en' ? 'Error creating agent.' : 'Erreur lors de la création.'))
     } finally {
       setCreating(false)
     }
@@ -169,7 +171,7 @@ const AgentMapList: React.FC = () => {
       const res = await axios.get<AgentMap[]>(url)
       setAgents(res.data)
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Erreur lors du chargement')
+      setError(err?.response?.data?.message || (lang === 'en' ? 'Loading error' : 'Erreur lors du chargement'))
     } finally {
       setLoading(false)
     }
@@ -202,7 +204,7 @@ const AgentMapList: React.FC = () => {
       closeRename()
       await fetchAgents()
     } catch (err: any) {
-      setRenameError(err?.response?.data?.message || 'Erreur lors du renommage')
+      setRenameError(err?.response?.data?.message || (lang === 'en' ? 'Rename error' : 'Erreur lors du renommage'))
     } finally {
       setRenaming(false)
     }
@@ -216,7 +218,7 @@ const AgentMapList: React.FC = () => {
       })
       await fetchAgents()
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Erreur lors de la mise à jour')
+      setError(err?.response?.data?.message || (lang === 'en' ? 'Update error' : 'Erreur lors de la mise à jour'))
     } finally {
       setTogglingId(null)
     }
@@ -230,7 +232,7 @@ const AgentMapList: React.FC = () => {
       })
       await fetchAgents()
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Erreur lors du changement de profil')
+      setError(err?.response?.data?.message || (lang === 'en' ? 'Profile change error' : 'Erreur lors du changement de profil'))
     } finally {
       setChangingProfilId(null)
     }
@@ -257,7 +259,7 @@ const AgentMapList: React.FC = () => {
       <header className="presence-header">
         <div className="header-left">
           <span className="header-logo">👥</span>
-          <span className="header-title">Agents — Mapping présence</span>
+          <span className="header-title">{lang === 'en' ? 'Agents — Presence Mapping' : 'Agents — Mapping présence'}</span>
         </div>
         <div className="header-right">
           <span className="header-user">
@@ -266,20 +268,20 @@ const AgentMapList: React.FC = () => {
           </span>
           {isAdmin ? (
             <>
-              <Link to="/manager" className="btn-manager-link">📊 Général</Link>
-              <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
-              <span className="btn-manager-link btn-manager-link--active">👥 Agents</span>
-              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">📈 CRM Récap</Link>}
+              <Link to="/manager" className="btn-manager-link">{lang === 'en' ? '📊 Overview' : '📊 Général'}</Link>
+              <Link to="/manager/day" className="btn-manager-link">{lang === 'en' ? '📅 Day View' : '📅 Journée'}</Link>
+              <span className="btn-manager-link btn-manager-link--active">{lang === 'en' ? '👥 Agents' : '👥 Agents'}</span>
+              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">{lang === 'en' ? '📈 CRM Recap' : '📈 CRM Récap'}</Link>}
             </>
           ) : (
             <>
-              <Link to="/pointer" className="btn-manager-link">⏱ Pointer</Link>
-              <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
-              <span className="btn-manager-link btn-manager-link--active">👥 Agents</span>
-              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">📈 CRM Récap</Link>}
+              <Link to="/pointer" className="btn-manager-link">{lang === 'en' ? '⏱ Clock' : '⏱ Pointer'}</Link>
+              <Link to="/manager/day" className="btn-manager-link">{lang === 'en' ? '📅 Day View' : '📅 Journée'}</Link>
+              <span className="btn-manager-link btn-manager-link--active">{lang === 'en' ? '👥 Agents' : '👥 Agents'}</span>
+              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">{lang === 'en' ? '📈 CRM Recap' : '📈 CRM Récap'}</Link>}
             </>
           )}
-          <button className="btn-logout" onClick={() => dispatch(logout())}>Déconnexion</button>
+          <button className="btn-logout" onClick={() => dispatch(logout())}>{lang === 'en' ? 'Logout' : 'Déconnexion'}</button>
         </div>
       </header>
 
@@ -306,7 +308,7 @@ const AgentMapList: React.FC = () => {
                   }
                 }}
               >
-                {isAdmin && <option value="all">Tous les bureaux</option>}
+                {isAdmin && <option value="all">{lang === 'en' ? 'All offices' : 'Tous les bureaux'}</option>}
                 {bureauOptions.map((id) => (
                   <option key={id} value={id}>{getBureauLabel(id)}</option>
                 ))}
@@ -342,7 +344,7 @@ const AgentMapList: React.FC = () => {
 
           {isTodTenant && (
             <button className="btn-create-agent" onClick={openCreateAgent}>
-              ➕ Créer un agent
+              ➕ {lang === 'en' ? 'Create agent' : 'Créer un agent'}
             </button>
           )}
         </div>
@@ -351,25 +353,25 @@ const AgentMapList: React.FC = () => {
 
         {/* Compteur */}
         <div className="agent-map-count">
-          {loading ? '...' : `${filtered.length} agent${filtered.length > 1 ? 's' : ''}`}
+            {loading ? '...' : `${filtered.length} ${lang === 'en' ? `agent${filtered.length > 1 ? 's' : ''}` : `agent${filtered.length > 1 ? 's' : ''}`}`}
         </div>
 
         {/* Table */}
         {loading ? (
-          <div className="loading-state">Chargement...</div>
+          <div className="loading-state">{lang === 'en' ? 'Loading...' : 'Chargement...'}</div>
         ) : (
           <div className="agents-table">
             <div className="agents-table-header agents-table-header--map">
-              <span>Utilisateur</span>
-              <span>Nom présence</span>
-              <span>Bureau</span>
-              <span>Profil</span>
-              <span>Statut</span>
+              <span>{lang === 'en' ? 'User' : 'Utilisateur'}</span>
+              <span>{lang === 'en' ? 'Presence name' : 'Nom présence'}</span>
+              <span>{lang === 'en' ? 'Office' : 'Bureau'}</span>
+              <span>{lang === 'en' ? 'Profile' : 'Profil'}</span>
+              <span>{lang === 'en' ? 'Status' : 'Statut'}</span>
               <span></span>
             </div>
 
             {filtered.length === 0 ? (
-              <div className="agents-empty">Aucun agent trouvé</div>
+              <div className="agents-empty">{lang === 'en' ? 'No agents found' : 'Aucun agent trouvé'}</div>
             ) : (
               filtered.map((agent) => (
                 <div key={agent.id} className="agent-row agent-row--map">
@@ -418,7 +420,7 @@ const AgentMapList: React.FC = () => {
 
                   <div className="agent-actions-col">
                     <button className="btn-agent-rename" onClick={() => openRename(agent)}>
-                      🏷️ Renommer
+                      🏷️ {lang === 'en' ? 'Rename' : 'Renommer'}
                     </button>
                     <button
                       className={`btn-agent-toggle ${agent.is_active === 1 ? 'btn-agent-toggle--off' : 'btn-agent-toggle--on'}`}
@@ -427,7 +429,7 @@ const AgentMapList: React.FC = () => {
                     >
                       {togglingId === agent.user_id
                         ? '...'
-                        : agent.is_active === 1 ? 'Désactiver' : 'Activer'
+                        : agent.is_active === 1 ? (lang === 'en' ? 'Deactivate' : 'Désactiver') : (lang === 'en' ? 'Activate' : 'Activer')
                       }
                     </button>
                   </div>
@@ -443,12 +445,12 @@ const AgentMapList: React.FC = () => {
         <div className="modal-overlay" onClick={closeRename}>
           <div className="modal-box modal-box--sm" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Renommer — <span className="modal-agent-name">{renamingAgent.username}</span></h3>
+              <h3>{lang === 'en' ? 'Rename — ' : 'Renommer — '}<span className="modal-agent-name">{renamingAgent.username}</span></h3>
               <button className="modal-close" onClick={closeRename}>✕</button>
             </div>
             <div className="modal-body">
               <div className="form-group">
-                <label htmlFor="nom-presence">Nom de présence</label>
+                <label htmlFor="nom-presence">{lang === 'en' ? 'Presence name' : 'Nom de présence'}</label>
                 <input
                   id="nom-presence"
                   type="text"
@@ -469,9 +471,9 @@ const AgentMapList: React.FC = () => {
                 onClick={handleRename}
                 disabled={renaming || !nomDraft.trim()}
               >
-                {renaming ? 'Sauvegarde...' : 'Confirmer'}
+                {renaming ? (lang === 'en' ? 'Saving...' : 'Sauvegarde...') : (lang === 'en' ? 'Confirm' : 'Confirmer')}
               </button>
-              <button className="btn-cancel-note" onClick={closeRename}>Annuler</button>
+              <button className="btn-cancel-note" onClick={closeRename}>{lang === 'en' ? 'Cancel' : 'Annuler'}</button>
             </div>
           </div>
         </div>
@@ -481,7 +483,7 @@ const AgentMapList: React.FC = () => {
         <div className="modal-overlay" onClick={closeCreateAgent}>
           <div className="modal-box modal-box--md" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>➕ Créer un agent</h3>
+              <h3>{lang === 'en' ? '\u2795 Create agent' : '\u2795 Créer un agent'}</h3>
               <button className="modal-close" onClick={closeCreateAgent}>✕</button>
             </div>
             <div className="modal-body">
@@ -499,7 +501,7 @@ const AgentMapList: React.FC = () => {
               </div>
 
               <div className="form-group">
-                <label>Mot de passe *</label>
+                <label>{lang === 'en' ? 'Password *' : 'Mot de passe *'}</label>
                 <input
                   type="password"
                   className="rename-input"
@@ -525,7 +527,7 @@ const AgentMapList: React.FC = () => {
               </div>
 
               <div className="form-group">
-                <label>Bureaux * (sélection multiple)</label>
+                <label>{lang === 'en' ? 'Offices * (multiple selection)' : 'Bureaux * (sélection multiple)'}</label>
                 <select
                   className="bureau-select"
                   multiple
@@ -561,9 +563,9 @@ const AgentMapList: React.FC = () => {
                 onClick={handleCreateAgent}
                 disabled={creating}
               >
-                {creating ? 'Création...' : 'Créer'}
+                {creating ? (lang === 'en' ? 'Creating...' : 'Création...') : (lang === 'en' ? 'Create' : 'Créer')}
               </button>
-              <button className="btn-cancel-note" onClick={closeCreateAgent}>Annuler</button>
+              <button className="btn-cancel-note" onClick={closeCreateAgent}>{lang === 'en' ? 'Cancel' : 'Annuler'}</button>
             </div>
           </div>
         </div>

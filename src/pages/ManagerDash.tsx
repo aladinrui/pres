@@ -10,14 +10,9 @@ import {
   toBusinessISODate,
   parseBackendTimestampToCairoMinutes,
 } from '../utils/businessTime'
+import { useLang, getMois, getJoursCourt } from '../utils/i18n'
 
 const API = ((import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:4000') + '/api'
-
-const MOIS = [
-  'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
-  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
-]
-const JOURS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
 
 const PROFIL_LABEL: Record<string, string> = {
   ret:         'R',
@@ -71,11 +66,13 @@ type BureauDayResponse = {
 type ApiStatus = UserDay['status'] | 'retard'
 type UiStatus = Exclude<ApiStatus, 'partial'>
 
-const STATUS_OPTIONS: { value: UiStatus; label: string; color: string }[] = [
-  { value: 'absent',  label: 'Absent',   color: '#ef4444' },
-  { value: 'retard',  label: 'Retard',   color: '#fb923c' },
-  { value: 'conge',   label: 'Congé',    color: '#818cf8' },
-]
+function getStatusOptions(lang: 'fr' | 'en'): { value: UiStatus; label: string; color: string }[] {
+  return [
+    { value: 'absent',  label: 'Absent',                          color: '#ef4444' },
+    { value: 'retard',  label: lang === 'en' ? 'Late' : 'Retard', color: '#fb923c' },
+    { value: 'conge',   label: lang === 'en' ? 'Leave' : 'Cong\u00e9', color: '#818cf8' },
+  ]
+}
 
 // ── Utils ──────────────────────────────────────────────────────────────────
 
@@ -83,9 +80,9 @@ function todayISO(): string {
   return toBusinessISODate()
 }
 
-function formatDateFR(iso: string): string {
+function formatDateFR(iso: string, jours: string[], mois: string[]): string {
   const d = new Date(iso + 'T00:00:00')
-  return `${JOURS[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]} ${d.getFullYear()}`
+  return `${jours[d.getDay()]} ${d.getDate()} ${mois[d.getMonth()]} ${d.getFullYear()}`
 }
 
 function formatTime(iso: string, bId: number): string {
@@ -138,6 +135,10 @@ function enrichedStatus(user: UserDay, threshold: string, date: string): 'presen
 const ManagerDash: React.FC = () => {
   const dispatch = useAppDispatch()
   const userDetail = useAppSelector((s) => s.user.userDetail)
+  const lang = useLang()
+  const STATUS_OPTIONS = getStatusOptions(lang)
+  const JOURS = getJoursCourt(lang)
+  const MOIS = getMois(lang)
 
   const myBureauId = userDetail?.bureau_id ?? (userDetail?.bureaux?.[0] as any)?.id ?? 0
   const username = userDetail?.username ?? ''
@@ -198,7 +199,7 @@ const ManagerDash: React.FC = () => {
       })
       setData(res.data)
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Erreur lors du chargement')
+      setError(err?.response?.data?.message || (lang === 'en' ? 'Loading error' : 'Erreur lors du chargement'))
     } finally {
       setLoading(false)
     }
@@ -253,7 +254,7 @@ const ManagerDash: React.FC = () => {
       closeEdit()
       await fetchDay(selectedDate)
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Erreur lors de la sauvegarde')
+      setError(err?.response?.data?.message || (lang === 'en' ? 'Save error' : 'Erreur lors de la sauvegarde'))
     } finally {
       setSaving(false)
     }
@@ -283,7 +284,7 @@ const ManagerDash: React.FC = () => {
       closeRename()
       await fetchDay(selectedDate)
     } catch (err: any) {
-      setRenameError(err?.response?.data?.message || 'Erreur lors du renommage')
+      setRenameError(err?.response?.data?.message || (lang === 'en' ? 'Rename error' : 'Erreur lors du renommage'))
     } finally {
       setRenaming(false)
     }
@@ -305,7 +306,7 @@ const ManagerDash: React.FC = () => {
       <header className="presence-header">
         <div className="header-left">
           <span className="header-logo">📋</span>
-          <span className="header-title">Présences — Bureau</span>
+          <span className="header-title">{lang === 'en' ? 'Attendance — Office' : 'Présences — Bureau'}</span>
         </div>
         <div className="header-right">
           <span className="header-user">
@@ -314,20 +315,20 @@ const ManagerDash: React.FC = () => {
           </span>
           {isAdmin ? (
             <>
-              <Link to="/manager" className="btn-manager-link">📊 Général</Link>
-              <span className="btn-manager-link btn-manager-link--active">📅 Journée</span>
-              <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
-              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">📈 CRM Récap</Link>}
+              <Link to="/manager" className="btn-manager-link">{lang === 'en' ? '📊 Overview' : '📊 Général'}</Link>
+              <span className="btn-manager-link btn-manager-link--active">{lang === 'en' ? '📅 Day View' : '📅 Journée'}</span>
+              <Link to="/manager/agents" className="btn-manager-link">{lang === 'en' ? '👥 Agents' : '👥 Agents'}</Link>
+              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">{lang === 'en' ? '📈 CRM Recap' : '📈 CRM Récap'}</Link>}
             </>
           ) : (
             <>
-              <Link to="/pointer" className="btn-manager-link">⏱ Pointer</Link>
-              <span className="btn-manager-link btn-manager-link--active">📅 Journée</span>
-              <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
-              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">📈 CRM Récap</Link>}
+              <Link to="/pointer" className="btn-manager-link">{lang === 'en' ? '⏱ Clock' : '⏱ Pointer'}</Link>
+              <span className="btn-manager-link btn-manager-link--active">{lang === 'en' ? '📅 Day View' : '📅 Journée'}</span>
+              <Link to="/manager/agents" className="btn-manager-link">{lang === 'en' ? '👥 Agents' : '👥 Agents'}</Link>
+              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">{lang === 'en' ? '📈 CRM Recap' : '📈 CRM Récap'}</Link>}
             </>
           )}
-          <button className="btn-logout" onClick={() => dispatch(logout())}>Déconnexion</button>
+          <button className="btn-logout" onClick={() => dispatch(logout())}>{lang === 'en' ? 'Logout' : 'Déconnexion'}</button>
         </div>
       </header>
 
@@ -338,10 +339,10 @@ const ManagerDash: React.FC = () => {
           <div className="date-nav">
             <button className="date-nav-btn" onClick={() => goDay(-1)}>‹</button>
             <div className="date-nav-center">
-              <span className="date-nav-label">{formatDateFR(selectedDate)}</span>
+              <span className="date-nav-label">{formatDateFR(selectedDate, JOURS, MOIS)}</span>
               {!isToday && (
                 <button className="date-nav-today" onClick={() => setSelectedDate(todayISO())}>
-                  Aujourd'hui
+                  {lang === 'en' ? 'Today' : "Aujourd'hui"}
                 </button>
               )}
             </div>
@@ -351,7 +352,7 @@ const ManagerDash: React.FC = () => {
           <div className="manager-top-right">
             {canSelectBureau && (
               <div className="bureau-select-control">
-                <label htmlFor="bureau-select-dash">🏢 Bureau</label>
+                <label htmlFor="bureau-select-dash">{lang === 'en' ? '🏢 Office' : '🏢 Bureau'}</label>
                 <select
                   id="bureau-select-dash"
                   className="bureau-select"
@@ -390,22 +391,22 @@ const ManagerDash: React.FC = () => {
         <div className="manager-counters">
           <div className="counter-card counter-present">
             <span className="counter-num">{presentCount}<span className="counter-num-total">/{users.length}</span></span>
-            <span className="counter-label">En service</span>
+            <span className="counter-label">{lang === 'en' ? 'On service' : 'En service'}</span>
           </div>
           <div className="counter-card counter-late">
             <span className="counter-num">{lateCount}</span>
-            <span className="counter-label">En retard</span>
+            <span className="counter-label">{lang === 'en' ? 'Late' : 'En retard'}</span>
           </div>
           <div className="counter-card counter-absent">
             <span className="counter-num">
               {absentCount}
               <span className="counter-num-secondary"> / {congeCount}</span>
             </span>
-            <span className="counter-label">Absents / Congés</span>
+            <span className="counter-label">{lang === 'en' ? 'Absent / Leave' : 'Absents / Congés'}</span>
           </div>
           <div className="counter-card counter-waiting">
             <span className="counter-num">{notChecked}</span>
-            <span className="counter-label">Non pointés</span>
+            <span className="counter-label">{lang === 'en' ? 'Not clocked' : 'Non pointés'}</span>
           </div>
         </div>
 
@@ -413,16 +414,16 @@ const ManagerDash: React.FC = () => {
 
         {/* Colonnes par statut */}
         {loading ? (
-          <div className="loading-state">Chargement...</div>
+          <div className="loading-state">{lang === 'en' ? 'Loading...' : 'Chargement...'}</div>
         ) : users.length === 0 ? (
-          <div className="agents-empty">Aucun agent pour ce bureau ce jour</div>
+          <div className="agents-empty">{lang === 'en' ? 'No agents for this office today' : 'Aucun agent pour ce bureau ce jour'}</div>
         ) : (
           <div className="status-columns">
 
             {/* En service (présent + présent/retard) */}
             <div className="status-col">
               <div className="status-col-header status-col-header--present">
-                <span>● En service</span>
+                <span>{lang === 'en' ? '● On service' : '● En service'}</span>
                 <span className="status-col-count">{presentCount}/{users.length}</span>
               </div>
               <div className="status-col-body">
@@ -450,7 +451,7 @@ const ManagerDash: React.FC = () => {
             {/* En retard (sorti en retard uniquement) */}
             <div className="status-col">
               <div className="status-col-header status-col-header--late">
-                <span>⏰ En retard</span>
+                <span>{lang === 'en' ? '⏰ Late' : '⏰ En retard'}</span>
                 <span className="status-col-count">{lateCount}</span>
               </div>
               <div className="status-col-body">
@@ -482,7 +483,7 @@ const ManagerDash: React.FC = () => {
             {/* Absents / Congés */}
             <div className="status-col">
               <div className="status-col-header status-col-header--absent">
-                <span>✗ Absents / Congés</span>
+                <span>{lang === 'en' ? '✗ Absent / Leave' : '✗ Absents / Congés'}</span>
                 <span className="status-col-count">{absentCount} / {congeCount}</span>
               </div>
               <div className="status-col-body">
@@ -494,7 +495,7 @@ const ManagerDash: React.FC = () => {
                         <span className="agent-name">{user.username}</span>
                         {user.profil && <span className="agent-profil">{profilLabel(user.profil)}</span>}
                         <span className="alerts-status-badge" style={{ fontSize: '0.7rem', padding: '1px 6px', background: es === 'conge' ? '#818cf822' : '#ef444422', color: es === 'conge' ? '#818cf8' : '#ef4444', borderColor: es === 'conge' ? '#818cf855' : '#ef444455' }}>
-                          {es === 'conge' ? 'Congé' : 'Absent'}
+                          {es === 'conge' ? (lang === 'en' ? 'Leave' : 'Congé') : 'Absent'}
                         </span>
                         {user.note && <span className="status-col-note">{user.note}</span>}
                       </div>
@@ -508,7 +509,7 @@ const ManagerDash: React.FC = () => {
             {/* Non pointés */}
             <div className="status-col">
               <div className="status-col-header status-col-header--np">
-                <span>○ Non pointés</span>
+                <span>{lang === 'en' ? '○ Not clocked' : '○ Non pointés'}</span>
                 <span className="status-col-count">{notChecked}</span>
               </div>
               <div className="status-col-body">
@@ -534,15 +535,15 @@ const ManagerDash: React.FC = () => {
         <div className="modal-overlay" onClick={closeEdit}>
           <div className="modal-box" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Annoter — <span className="modal-agent-name">{editingUser.username}</span>
-                <span className="modal-date-sub">{formatDateFR(editingDate)}</span>
+              <h3>{lang === 'en' ? 'Annotate — ' : 'Annoter — '}<span className="modal-agent-name">{editingUser.username}</span>
+                <span className="modal-date-sub">{formatDateFR(editingDate, JOURS, MOIS)}</span>
               </h3>
               <button className="modal-close" onClick={closeEdit}>✕</button>
             </div>
 
             <div className="modal-body">
               <div className="form-group">
-                <label>Statut du jour</label>
+                <label>{lang === 'en' ? 'Day status' : 'Statut du jour'}</label>
                 <div className="status-pills">
                   {STATUS_OPTIONS.map((s) => (
                     <button
@@ -559,13 +560,13 @@ const ManagerDash: React.FC = () => {
               </div>
 
               <div className="form-group">
-                <label htmlFor="manager-note">Note sur cette journée</label>
+                <label htmlFor="manager-note">{lang === 'en' ? 'Note for this day' : 'Note sur cette journée'}</label>
                 <textarea
                   id="manager-note"
                   className="log-note-input"
                   value={noteDraft}
                   onChange={(e) => setNoteDraft(e.target.value)}
-                  placeholder="Ex : absent pour raison médicale, retard justifié..."
+                  placeholder={lang === 'en' ? 'E.g. absent for medical reasons, justified late...' : 'Ex : absent pour raison médicale, retard justifié...'}
                   rows={4}
                   maxLength={1000}
                 />
@@ -574,9 +575,9 @@ const ManagerDash: React.FC = () => {
 
             <div className="modal-footer">
               <button className="btn-save-note" onClick={handleSave} disabled={saving}>
-                {saving ? 'Sauvegarde...' : 'Sauvegarder'}
+                {saving ? (lang === 'en' ? 'Saving...' : 'Sauvegarde...') : (lang === 'en' ? 'Save' : 'Sauvegarder')}
               </button>
-              <button className="btn-cancel-note" onClick={closeEdit}>Annuler</button>
+              <button className="btn-cancel-note" onClick={closeEdit}>{lang === 'en' ? 'Cancel' : 'Annuler'}</button>
             </div>
           </div>
         </div>

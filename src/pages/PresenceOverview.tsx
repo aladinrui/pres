@@ -18,9 +18,7 @@ import {
   toBusinessISODate,
   parseToCairoHHMM,
 } from '../utils/businessTime'
-
-const MOIS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
-const JOURS = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']
+import { useLang, getMois, getJoursCourt } from '../utils/i18n'
 
 const PROFIL_LABEL: Record<string, string> = {
   ret:         'R',
@@ -51,9 +49,9 @@ function addDays(iso: string, n: number) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function formatDateFR(iso: string) {
+function formatDateFR(iso: string, jours: string[], mois: string[]) {
   const d = new Date(iso + 'T00:00:00')
-  return `${JOURS[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]} ${d.getFullYear()}`
+  return `${jours[d.getDay()]} ${d.getDate()} ${mois[d.getMonth()]} ${d.getFullYear()}`
 }
 
 function formatTime(iso: string, bId = 0) {
@@ -105,20 +103,24 @@ function getAlertKind(user: UserDay, threshold: string, _date?: string): AlertKi
   return 'ok'
 }
 
-const KIND_META: Record<AlertKind, { label: string; color: string; priority: number }> = {
-  absent:         { label: 'Absent',              color: '#ef4444', priority: 1 },
-  'late-status':  { label: 'Partiel/Retard',      color: '#f59e0b', priority: 2 },
-  'late-time':    { label: 'En retard',            color: '#fb923c', priority: 3 },
-  'present-late': { label: 'Présent / En retard', color: '#4ade80', priority: 3 },
-  'not-checked':  { label: 'Pas pointé',           color: '#6b7280', priority: 4 },
-  conge:          { label: 'Congé',                color: '#818cf8', priority: 5 },
-  ok:             { label: 'OK',                   color: '#22c55e', priority: 6 },
+function getKindMeta(lang: 'fr' | 'en'): Record<AlertKind, { label: string; color: string; priority: number }> {
+  return {
+    absent:         { label: lang === 'en' ? 'Absent'           : 'Absent',              color: '#ef4444', priority: 1 },
+    'late-status':  { label: lang === 'en' ? 'Partial/Late'     : 'Partiel/Retard',      color: '#f59e0b', priority: 2 },
+    'late-time':    { label: lang === 'en' ? 'Late'             : 'En retard',            color: '#fb923c', priority: 3 },
+    'present-late': { label: lang === 'en' ? 'Present / Late'   : 'Présent / En retard', color: '#4ade80', priority: 3 },
+    'not-checked':  { label: lang === 'en' ? 'Not clocked'      : 'Pas pointé',           color: '#6b7280', priority: 4 },
+    conge:          { label: lang === 'en' ? 'Leave'            : 'Congé',                color: '#818cf8', priority: 5 },
+    ok:             { label: 'OK',                                                        color: '#22c55e', priority: 6 },
+  }
 }
 
-const ALERT_STATUS: Record<string, { label: string; color: string }> = {
-  non_pointe: { label: 'Pas pointé', color: '#6b7280' },
-  absent:     { label: 'Absent',     color: '#ef4444' },
-  retard:     { label: 'Retard',     color: '#f59e0b' },
+function getAlertStatus(lang: 'fr' | 'en'): Record<string, { label: string; color: string }> {
+  return {
+    non_pointe: { label: lang === 'en' ? 'Not clocked' : 'Pas pointé', color: '#6b7280' },
+    absent:     { label: 'Absent',                                      color: '#ef4444' },
+    retard:     { label: lang === 'en' ? 'Late' : 'Retard',             color: '#f59e0b' },
+  }
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -126,6 +128,11 @@ const ALERT_STATUS: Record<string, { label: string; color: string }> = {
 const PresenceOverview: React.FC = () => {
   const dispatch = useAppDispatch()
   const userDetail = useAppSelector((s) => s.user.userDetail)
+  const lang = useLang()
+  const JOURS = getJoursCourt(lang)
+  const MOIS = getMois(lang)
+  const KIND_META = getKindMeta(lang)
+  const ALERT_STATUS = getAlertStatus(lang)
 
   const username  = userDetail?.username ?? ''
   const profil    = (userDetail?.profil as string) ?? ''
@@ -228,7 +235,7 @@ const PresenceOverview: React.FC = () => {
       <header className="presence-header">
         <div className="header-left">
           <span className="header-logo">{isAdmin ? '📊' : '👁'}</span>
-          <span className="header-title">{isAdmin ? 'Général' : "Vue d'ensemble"}</span>
+          <span className="header-title">{isAdmin ? (lang === 'en' ? 'Overview' : 'Général') : (lang === 'en' ? 'Dashboard' : "Vue d'ensemble")}</span>
         </div>
         <div className="header-right">
           <span className="header-user">
@@ -238,20 +245,20 @@ const PresenceOverview: React.FC = () => {
           </span>
           {isAdmin ? (
             <>
-              <span className="btn-manager-link btn-manager-link--active">📊 Général</span>
-              <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
+              <span className="btn-manager-link btn-manager-link--active">{lang === 'en' ? '📊 Overview' : '📊 Général'}</span>
+              <Link to="/manager/day" className="btn-manager-link">{lang === 'en' ? '📅 Day View' : '📅 Journée'}</Link>
               <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
-              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">📈 CRM Récap</Link>}
+              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">{lang === 'en' ? '📈 CRM Recap' : '📈 CRM Récap'}</Link>}
             </>
           ) : (
             <>
-              <Link to="/pointer" className="btn-manager-link">⏱ Pointer</Link>
-              <Link to="/manager/day" className="btn-manager-link">📅 Journée</Link>
+              <Link to="/pointer" className="btn-manager-link">⏱ {lang === 'en' ? 'Clock' : 'Pointer'}</Link>
+              <Link to="/manager/day" className="btn-manager-link">{lang === 'en' ? '📅 Day View' : '📅 Journée'}</Link>
               <Link to="/manager/agents" className="btn-manager-link">👥 Agents</Link>
-              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">📈 CRM Récap</Link>}
+              {canOpenCrmRecap && <Link to="/manager/crm-recap" className="btn-manager-link">{lang === 'en' ? '📈 CRM Recap' : '📈 CRM Récap'}</Link>}
             </>
           )}
-          <button className="btn-logout" onClick={() => dispatch(logout())}>Déconnexion</button>
+          <button className="btn-logout" onClick={() => dispatch(logout())}>{lang === 'en' ? 'Logout' : 'Déconnexion'}</button>
         </div>
       </header>
 
@@ -262,11 +269,11 @@ const PresenceOverview: React.FC = () => {
           <>
             <div className="general-section-header">
               <div>
-                <span className="general-section-title">⚠️ Alertes du jour</span>
-                <span className="general-section-date">{formatDateFR(todayISO())}</span>
+                <span className="general-section-title">{lang === 'en' ? '⚠️ Today\'s Alerts' : '⚠️ Alertes du jour'}</span>
+                <span className="general-section-date">{formatDateFR(todayISO(), JOURS, MOIS)}</span>
               </div>
               <div className="threshold-control">
-                <label htmlFor="threshold-admin">⏰ Seuil</label>
+                <label htmlFor="threshold-admin">⏰ {lang === 'en' ? 'Threshold' : 'Seuil'}</label>
                 <input
                   id="threshold-admin"
                   type="time"
@@ -289,7 +296,7 @@ const PresenceOverview: React.FC = () => {
             {/* Chart % en service par bureau */}
             {Object.keys(allBureauxData).length > 0 && (
               <div className="bureau-chart-section">
-                <span className="bureau-chart-title">% En service par bureau</span>
+                <span className="bureau-chart-title">{lang === 'en' ? '% On service by office' : '% En service par bureau'}</span>
                 <div className="bureau-chart-grid">
                 {Object.keys(allBureauxData).map(Number).sort((a, b) => a - b).map((bureau_id) => {
                     const agents  = (allBureauxData[bureau_id] ?? []).filter((a) => a.is_active !== 0 && a.is_active !== false)
@@ -360,11 +367,11 @@ const PresenceOverview: React.FC = () => {
                   })}
                 </div>
                 <div className="bureau-chart-legend">
-                  <span className="bureau-chart-legend-item"><i style={{ background: '#22c55e' }} />Présent</span>
-                  <span className="bureau-chart-legend-item"><i style={{ background: '#4ade80', opacity: 0.6 }} />Prés/Retard</span>
-                  <span className="bureau-chart-legend-item"><i style={{ background: '#fb923c' }} />Retard</span>
+                  <span className="bureau-chart-legend-item"><i style={{ background: '#22c55e' }} />{lang === 'en' ? 'Present' : 'Présent'}</span>
+                  <span className="bureau-chart-legend-item"><i style={{ background: '#4ade80', opacity: 0.6 }} />{lang === 'en' ? 'Pres/Late' : 'Prés/Retard'}</span>
+                  <span className="bureau-chart-legend-item"><i style={{ background: '#fb923c' }} />{lang === 'en' ? 'Late' : 'Retard'}</span>
                   <span className="bureau-chart-legend-item"><i style={{ background: '#ef4444' }} />Absent</span>
-                  <span className="bureau-chart-legend-item"><i style={{ background: '#818cf8' }} />Congé</span>
+                  <span className="bureau-chart-legend-item"><i style={{ background: '#818cf8' }} />{lang === 'en' ? 'Leave' : 'Congé'}</span>
                   <span className="bureau-chart-legend-item"><i style={{ background: '#374151' }} />NP</span>
                 </div>
               </div>
@@ -372,7 +379,7 @@ const PresenceOverview: React.FC = () => {
 
             {/* Grille de cartes par bureau */}
             {alertsLoading ? (
-              <div className="loading-state">Chargement...</div>
+              <div className="loading-state">{lang === 'en' ? 'Loading...' : 'Chargement...'}</div>
             ) : (
               <div className="bureaux-cards-grid">
                 {Object.keys(allBureauxData).map(Number).sort((a, b) => a - b).map((bureau_id) => {
@@ -455,7 +462,7 @@ const PresenceOverview: React.FC = () => {
                           {nbPres > 0 && (
                             <span className="bstat bstat--pres">
                               <span className="bstat-num">{nbPres}</span>
-                              <span className="bstat-lbl">Prés</span>
+                              <span className="bstat-lbl">{lang === 'en' ? 'Pres' : 'Prés'}</span>
                             </span>
                           )}
                           {nbPresLate > 0 && (
@@ -464,7 +471,7 @@ const PresenceOverview: React.FC = () => {
                               onClick={(e) => toggleCardFilter(bureau_id, 'present-late', e)}
                             >
                               <span className="bstat-num">{nbPresLate}</span>
-                              <span className="bstat-lbl">P/R</span>
+                              <span className="bstat-lbl">{lang === 'en' ? 'P/L' : 'P/R'}</span>
                             </button>
                           )}
                           <button
@@ -472,7 +479,7 @@ const PresenceOverview: React.FC = () => {
                             onClick={(e) => toggleCardFilter(bureau_id, 'retard', e)}
                           >
                             <span className="bstat-num">{nbRetPure}</span>
-                            <span className="bstat-lbl">Ret</span>
+                            <span className="bstat-lbl">{lang === 'en' ? 'Late' : 'Ret'}</span>
                           </button>
                           <button
                             className={`bstat bstat--abs${nbAbs === 0 ? ' bstat--zero' : ''}${activeFilter === 'absent' ? ' bstat--active' : ''}`}
@@ -484,7 +491,7 @@ const PresenceOverview: React.FC = () => {
                           {nbConge > 0 && (
                             <span className="bstat bstat--conge">
                               <span className="bstat-num">{nbConge}</span>
-                              <span className="bstat-lbl">Cong</span>
+                              <span className="bstat-lbl">{lang === 'en' ? 'Leave' : 'Cong'}</span>
                             </span>
                           )}
                           <button
@@ -492,7 +499,7 @@ const PresenceOverview: React.FC = () => {
                             onClick={(e) => toggleCardFilter(bureau_id, 'non_pointe', e)}
                           >
                             <span className="bstat-num">{nbNP}</span>
-                            <span className="bstat-lbl">NP</span>
+                            <span className="bstat-lbl">{lang === 'en' ? 'NC' : 'NP'}</span>
                           </button>
                         </div>
                         <span className="bureau-card-chevron">{isExpanded ? '▲' : '▼'}</span>
@@ -514,27 +521,27 @@ const PresenceOverview: React.FC = () => {
                         return (
                         <div className="bureau-card-body">
                           {isLoadingFull ? (
-                            <div className="loading-state" style={{ padding: '0.75rem' }}>Chargement...</div>
+                            <div className="loading-state" style={{ padding: '0.75rem' }}>{lang === 'en' ? 'Loading...' : 'Chargement...'}</div>
                           ) : displayedAgents.length === 0 && !isPresentShown ? (
                             <div className="agents-empty" style={{ padding: '0.75rem' }}>
-                              Aucun problème
+                              {lang === 'en' ? 'No issues' : 'Aucun problème'}
                               {nbHidden > 0 && (
                                 <button
                                   className="btn-show-present"
                                   onClick={() => setShowPresent(prev => ({ ...prev, [bureau_id]: true }))}
                                 >
-                                  Voir {nbHidden} présent{nbHidden > 1 ? 's' : ''}
+                                  {lang === 'en' ? `Show ${nbHidden} present` : `Voir ${nbHidden} présent${nbHidden > 1 ? 's' : ''}`}
                                 </button>
                               )}
                             </div>
                           ) : displayedAgents.length === 0 ? (
-                            <div className="agents-empty" style={{ padding: '0.75rem' }}>Aucun agent</div>
+                            <div className="agents-empty" style={{ padding: '0.75rem' }}>{lang === 'en' ? 'No agents' : 'Aucun agent'}</div>
                           ) : (
                             <div className="bureau-full-table">
                               <div className="bureau-full-head">
                                 <span>Agent</span>
-                                <span>Statut</span>
-                                <span>Heure</span>
+                                <span>{lang === 'en' ? 'Status' : 'Statut'}</span>
+                                <span>{lang === 'en' ? 'Time' : 'Heure'}</span>
                                 <span>Note</span>
                               </div>
                               {nbHidden > 0 && (
@@ -543,7 +550,7 @@ const PresenceOverview: React.FC = () => {
                                     className="btn-show-present"
                                     onClick={() => setShowPresent(prev => ({ ...prev, [bureau_id]: !isPresentShown }))}
                                   >
-                                    {isPresentShown ? `▲ Masquer les présents (${nbHidden})` : `▼ Voir ${nbHidden} présent${nbHidden > 1 ? 's' : ''}`}
+                                    {isPresentShown ? `▲ ${lang === 'en' ? `Hide present (${nbHidden})` : `Masquer les présents (${nbHidden})`}` : `▼ ${lang === 'en' ? `Show ${nbHidden} present` : `Voir ${nbHidden} présent${nbHidden > 1 ? 's' : ''}`}`}
                                   </button>
                                 </div>
                               )}
@@ -571,12 +578,12 @@ const PresenceOverview: React.FC = () => {
                                       : (ci ? isLateByTime(agent, threshold) : false)
                                   )) ? 'present-late' : agStatus
                                   const sm: { label: string; color: string } =
-                                    effectiveStatus === 'present-late' ? { label: 'Présent / En retard', color: '#4ade80' } :
-                                    effectiveStatus === 'retard'       ? { label: 'En retard',            color: '#fb923c' } :
-                                    effectiveStatus === 'absent'       ? { label: 'Absent',                color: '#ef4444' } :
-                                    effectiveStatus === 'non_pointe'   ? { label: 'Pas pointé',            color: '#6b7280' } :
-                                    effectiveStatus === 'conge'        ? { label: 'Congé',                 color: '#818cf8' } :
-                                                                         { label: 'Présent',               color: '#22c55e' }
+                                    effectiveStatus === 'present-late' ? { label: lang === 'en' ? 'Present / Late'  : 'Présent / En retard', color: '#4ade80' } :
+                                    effectiveStatus === 'retard'       ? { label: lang === 'en' ? 'Late'            : 'En retard',            color: '#fb923c' } :
+                                    effectiveStatus === 'absent'       ? { label: 'Absent',                                                   color: '#ef4444' } :
+                                    effectiveStatus === 'non_pointe'   ? { label: lang === 'en' ? 'Not clocked'    : 'Pas pointé',            color: '#6b7280' } :
+                                    effectiveStatus === 'conge'        ? { label: lang === 'en' ? 'Leave'          : 'Congé',                 color: '#818cf8' } :
+                                                                         { label: lang === 'en' ? 'Present'        : 'Présent',               color: '#22c55e' }
                                   return (
                                     <div key={agent.user_id} className="bureau-full-row">
                                       <div className="agent-info-line">
@@ -599,7 +606,7 @@ const PresenceOverview: React.FC = () => {
                                             <span className="alerts-time">
                                               ▶ {checkinDisplay}
                                               {scheduleDisplay && (effectiveStatus === 'present-late' || effectiveStatus === 'retard') && (
-                                                <span style={{ color: '#6b7280', fontSize: '0.75em', marginLeft: '0.4em' }}>prévu {scheduleDisplay}</span>
+                                                <span style={{ color: '#6b7280', fontSize: '0.75em', marginLeft: '0.4em' }}>{lang === 'en' ? 'sched.' : 'prévu'} {scheduleDisplay}</span>
                                               )}
                                             </span>
                                           )
@@ -634,20 +641,20 @@ const PresenceOverview: React.FC = () => {
               <div className="date-nav">
                 <button className="date-nav-btn" onClick={() => goDay(-1)}>‹</button>
                 <div className="date-nav-center">
-                  <span className="date-nav-label">{formatDateFR(selectedDate)}</span>
+                  <span className="date-nav-label">{formatDateFR(selectedDate, JOURS, MOIS)}</span>
                   {!isToday && (
-                    <button className="date-nav-today" onClick={() => setSelectedDate(todayISO())}>Aujourd'hui</button>
+                    <button className="date-nav-today" onClick={() => setSelectedDate(todayISO())}>{lang === 'en' ? 'Today' : "Aujourd'hui"}</button>
                   )}
                 </div>
                 <button className="date-nav-btn" onClick={() => goDay(1)} disabled={isToday}>›</button>
               </div>
               <div className="threshold-control">
-                <label htmlFor="threshold">⏰ Seuil retard</label>
+                <label htmlFor="threshold">⏰ {lang === 'en' ? 'Late threshold' : 'Seuil retard'}</label>
                 <input id="threshold" type="time" className="threshold-input" value={threshold} onChange={(e) => dispatch(setThreshold(e.target.value))} />
               </div>
               <div className="agent-map-filters">
-                <button className={`filter-btn ${filter === 'all' ? 'filter-btn--active' : ''}`} onClick={() => setFilter('all')}>Tous ({users.length})</button>
-                <button className={`filter-btn ${filter === 'issues' ? 'filter-btn--active' : ''}`} onClick={() => setFilter('issues')}>⚠ Problèmes ({cAbsent + cLate + cNoCheck})</button>
+                <button className={`filter-btn ${filter === 'all' ? 'filter-btn--active' : ''}`} onClick={() => setFilter('all')}>{lang === 'en' ? `All (${users.length})` : `Tous (${users.length})`}</button>
+                <button className={`filter-btn ${filter === 'issues' ? 'filter-btn--active' : ''}`} onClick={() => setFilter('issues')}>{lang === 'en' ? `⚠ Issues (${cAbsent + cLate + cNoCheck})` : `⚠ Problèmes (${cAbsent + cLate + cNoCheck})`}</button>
               </div>
               <button className="btn-refresh" onClick={() => dispatch(fetchBureauDay(selectedDate))} disabled={bureauDayLoading}>{bureauDayLoading ? '...' : '↻'}</button>
             </div>
@@ -655,20 +662,20 @@ const PresenceOverview: React.FC = () => {
             {/* Alertes du jour (manager) */}
             <div className="alerts-section">
               <div className="alerts-section-header">
-                <span className="alerts-section-title">⚠️ Alertes du jour</span>
-                <span className="alerts-section-date">{formatDateFR(todayISO())}</span>
+                <span className="alerts-section-title">{lang === 'en' ? '⚠️ Today\'s Alerts' : '⚠️ Alertes du jour'}</span>
+                <span className="alerts-section-date">{formatDateFR(todayISO(), JOURS, MOIS)}</span>
                 <button className="btn-refresh" onClick={() => dispatch(fetchAlerts())} disabled={alertsLoading}>{alertsLoading ? '...' : '↻'}</button>
               </div>
               {alertsError && <div className="alert-error">{alertsError}</div>}
               <div className="alerts-counters">
-                <div className="alert-stat alert-stat--non-pointe"><span className="alert-stat-num">{cAlertNonPointe}</span><span className="alert-stat-label">Pas pointé</span></div>
+                <div className="alert-stat alert-stat--non-pointe"><span className="alert-stat-num">{cAlertNonPointe}</span><span className="alert-stat-label">{lang === 'en' ? 'Not clocked' : 'Pas pointé'}</span></div>
                 <div className="alert-stat alert-stat--absent"><span className="alert-stat-num">{cAlertAbsent}</span><span className="alert-stat-label">Absent</span></div>
-                <div className="alert-stat alert-stat--retard"><span className="alert-stat-num">{cAlertRetard}</span><span className="alert-stat-label">Retard</span></div>
+                <div className="alert-stat alert-stat--retard"><span className="alert-stat-num">{cAlertRetard}</span><span className="alert-stat-label">{lang === 'en' ? 'Late' : 'Retard'}</span></div>
               </div>
               {alertsLoading ? (
-                <div className="loading-state">Chargement...</div>
+                <div className="loading-state">{lang === 'en' ? 'Loading...' : 'Chargement...'}</div>
               ) : bureauGroups.length === 0 ? (
-                <div className="alerts-empty">✅ Aucune alerte pour aujourd'hui</div>
+                <div className="alerts-empty">{lang === 'en' ? '\u2705 No alerts today' : '\u2705 Aucune alerte pour aujourd\'hui'}</div>
               ) : (
                 <div className="alerts-bureaux">
                   {bureauGroups.map(({ bureau_id, agents }) => {
@@ -685,13 +692,13 @@ const PresenceOverview: React.FC = () => {
                         <div className="alerts-bureau-header">
                           <span className="alerts-bureau-name">{bName}</span>
                           <div className="alerts-bureau-mini-stats">
-                            {nbAbs > 0 && <span className="alerts-mini-stat alerts-mini-stat--absent">{nbAbs} absent{nbAbs > 1 ? 's' : ''}</span>}
-                            {nbRet > 0 && <span className="alerts-mini-stat alerts-mini-stat--retard">{nbRet} retard{nbRet > 1 ? 's' : ''}</span>}
-                            {nbNP  > 0 && <span className="alerts-mini-stat alerts-mini-stat--np">{nbNP} pas pointé{nbNP > 1 ? 's' : ''}</span>}
+                            {nbAbs > 0 && <span className="alerts-mini-stat alerts-mini-stat--absent">{nbAbs} {lang === 'en' ? 'absent' : 'absent'}{nbAbs > 1 && !lang.startsWith('en') ? 's' : ''}</span>}
+                            {nbRet > 0 && <span className="alerts-mini-stat alerts-mini-stat--retard">{nbRet} {lang === 'en' ? 'late' : 'retard'}{nbRet > 1 && !lang.startsWith('en') ? 's' : ''}</span>}
+                            {nbNP  > 0 && <span className="alerts-mini-stat alerts-mini-stat--np">{nbNP} {lang === 'en' ? 'not clocked' : 'pas pointé'}{nbNP > 1 && !lang.startsWith('en') ? 's' : ''}</span>}
                           </div>
                         </div>
                         <div className="alerts-table">
-                          <div className="alerts-table-head"><span>Agent</span><span>Statut</span><span>Note</span><span>Heure</span></div>
+                          <div className="alerts-table-head"><span>Agent</span><span>{lang === 'en' ? 'Status' : 'Statut'}</span><span>Note</span><span>{lang === 'en' ? 'Time' : 'Heure'}</span></div>
                           {sortedAgents.map((agent) => {
                             const sm = ALERT_STATUS[agent.status] ?? { label: agent.status, color: '#6b7280' }
                             return (
@@ -716,18 +723,18 @@ const PresenceOverview: React.FC = () => {
 
             {/* Compteurs */}
             <div className="manager-counters">
-              <div className="counter-card counter-present"><span className="counter-num">{cOk}</span><span className="counter-label">À l'heure</span></div>
-              <div className="counter-card" style={{ borderTop: '3px solid #fb923c' }}><span className="counter-num" style={{ color: '#fb923c' }}>{cLate}</span><span className="counter-label">En retard</span></div>
-              <div className="counter-card counter-absent"><span className="counter-num">{cAbsent}</span><span className="counter-label">Absents</span></div>
-              <div className="counter-card counter-waiting"><span className="counter-num">{cNoCheck}</span><span className="counter-label">Pas pointé</span></div>
+              <div className="counter-card counter-present"><span className="counter-num">{cOk}</span><span className="counter-label">{lang === 'en' ? 'On time' : 'À l\'heure'}</span></div>
+              <div className="counter-card" style={{ borderTop: '3px solid #fb923c' }}><span className="counter-num" style={{ color: '#fb923c' }}>{cLate}</span><span className="counter-label">{lang === 'en' ? 'Late' : 'En retard'}</span></div>
+              <div className="counter-card counter-absent"><span className="counter-num">{cAbsent}</span><span className="counter-label">{lang === 'en' ? 'Absent' : 'Absents'}</span></div>
+              <div className="counter-card counter-waiting"><span className="counter-num">{cNoCheck}</span><span className="counter-label">{lang === 'en' ? 'Not clocked' : 'Pas pointé'}</span></div>
             </div>
 
             {bureauDayError && <div className="alert-error">{bureauDayError}</div>}
 
             {bureauDayLoading ? (
-              <div className="loading-state">Chargement...</div>
+              <div className="loading-state">{lang === 'en' ? 'Loading...' : 'Chargement...'}</div>
             ) : displayed.length === 0 ? (
-              <div className="agents-empty">Aucun agent à afficher</div>
+              <div className="agents-empty">{lang === 'en' ? 'No agents to display' : 'Aucun agent à afficher'}</div>
             ) : (
               <div className="overview-grid">
                 {displayed.map((user) => {
@@ -748,14 +755,14 @@ const PresenceOverview: React.FC = () => {
                         </div>
                         <div className="overview-card-mid">
                           {ci
-                            ? <span className={`overview-checkin-time ${kind === 'late-time' ? 'overview-checkin-late' : ''}`}>▶ {formatTime(ci, myBureauId)}{kind === 'late-time' && <span className="late-flag">RETARD</span>}</span>
-                            : <span className="overview-no-checkin">Aucun pointage</span>}
+                            ? <span className={`overview-checkin-time ${kind === 'late-time' ? 'overview-checkin-late' : ''}`}>▶ {formatTime(ci, myBureauId)}{kind === 'late-time' && <span className="late-flag">{lang === 'en' ? 'LATE' : 'RETARD'}</span>}</span>
+                            : <span className="overview-no-checkin">{lang === 'en' ? 'No record' : 'Aucun pointage'}</span>}
                         </div>
                         {(user.note || isIssue) && (
                           <div className="overview-note">
                             {user.note
                               ? <><span className="overview-note-icon">📌</span><span className="overview-note-text">{user.note}</span></>
-                              : <span className="overview-note-empty">Aucune note</span>}
+                              : <span className="overview-note-empty">{lang === 'en' ? 'No note' : 'Aucune note'}</span>}
                           </div>
                         )}
                       </div>

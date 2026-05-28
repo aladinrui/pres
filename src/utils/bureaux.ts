@@ -2,7 +2,7 @@
  *  Pour tod, les noms (ex: "2.1") viennent toujours du JWT. */
 const KNOWN_BUREAU_NAMES: Record<number, string> = {
   3: 'CRN', 4: 'STV', 5: 'MRO', 6: 'SRG',
-  7: 'YN',  8: 'JC',  9: 'PAST', 10: 'PASC',
+  7: 'YN',  8: 'JC',  9: 'PAST', 10: 'PASC',11: 'ASH'
 }
 
 /** Construit la map id→name depuis les bureaux du token JWT.

@@ -250,6 +250,9 @@ const CrmRecap: React.FC = () => {
   const today = toBusinessISODate()
   const [dateTo, setDateTo] = useState<string>(today)
   const [dateFrom, setDateFrom] = useState<string>('2026-06-01')
+  // États brouillon pour les inputs : ne déclenchent pas l'API avant validation
+  const [inputFrom, setInputFrom] = useState<string>('2026-06-01')
+  const [inputTo, setInputTo] = useState<string>(today)
 
   const [bureauxData, setBureauxData] = useState<BureauRecapView[]>([])
   const [loading, setLoading] = useState(true)
@@ -261,13 +264,12 @@ const CrmRecap: React.FC = () => {
   const [search, setSearch] = useState('')
 
   const [openedRowKey, setOpenedRowKey] = useState<string | null>(null)
-  const [detailLoading, setDetailLoading] = useState(false)
-  const [detailError, setDetailError] = useState<string | null>(null)
-  const [agentDetail, setAgentDetail] = useState<AgentDetailResponse | null>(null)
+  const [agentDetails, setAgentDetails] = useState<Record<string, AgentDetailResponse>>({})
+  const [detailsLoading, setDetailsLoading] = useState(false)
   // Cache non_pointe_count calculé depuis le détail : clé = "bureauId-userId-month"
   const [nonPointeCache, setNonPointeCache] = useState<Record<string, number>>({})
   // Seuils personnalisés par bureau (override du schedule_start de l'API)
-  const [bureauThresholds, setBureauThresholds] = useState<Record<number, string>>({})
+  const [bureauThresholds, setBureauThresholds] = useState<Record<number, string>>({ 8: '10:00' })
 
   const availableBureaux = useMemo(() => {
     const fromApi = bureauxData.map((b) => b.bureau_id)
@@ -336,8 +338,7 @@ const CrmRecap: React.FC = () => {
       setError(err?.response?.data?.message || 'API indisponible, affichage mock temporaire.')
     } finally {
       setOpenedRowKey(null)
-      setAgentDetail(null)
-      setDetailError(null)
+      setAgentDetails({})
       setNonPointeCache({})
       setLoading(false)
     }
@@ -347,38 +348,6 @@ const CrmRecap: React.FC = () => {
     fetchRecap()
   }, [fetchRecap])
 
-  // Calcul en arrière-plan du non_pointe pour tous les agents dès que le récap est chargé
-  useEffect(() => {
-    if (bureauxData.length === 0) return
-    const tasks: Array<{ bureauId: number; userId: number; month: string; rowKey: string }> = []
-    bureauxData.forEach((b) => {
-      b.rows.forEach((row) => {
-        const rowKey = `${b.bureau_id}-${row.user_id}-${row.month}`
-        tasks.push({ bureauId: b.bureau_id, userId: row.user_id, month: row.month, rowKey })
-      })
-    })
-    if (tasks.length === 0) return
-    let cancelled = false
-    ;(async () => {
-      for (const t of tasks) {
-        if (cancelled) break
-        try {
-          const payload = { user_id: t.userId, daterange: { from: dateFrom, to: dateTo } }
-          const res = await axios.post<AgentDetailResponse>(`${API}/presence/agent-detail`, payload)
-          const enrichedDays = fillWeekdays(res.data.days, res.data.daterange.from, res.data.daterange.to)
-          const np = enrichedDays.filter((d) => {
-            const key = normalizeStatus(d.status)
-            return !resolveCheckinTime(d) && key !== 'absent' && key !== 'conge'
-          }).length
-          if (!cancelled) setNonPointeCache((prev) => ({ ...prev, [t.rowKey]: np }))
-        } catch {
-          // silencieux
-        }
-      }
-    })()
-    return () => { cancelled = true }
-  }, [bureauxData, API, dateFrom, dateTo])
-
   useEffect(() => {
     if (selectedBureau === 'all') return
     if (!availableBureaux.includes(selectedBureau)) {
@@ -386,47 +355,46 @@ const CrmRecap: React.FC = () => {
     }
   }, [availableBureaux, selectedBureau])
 
-  const openAgentDetail = useCallback(async (userId: number, rowKey: string) => {
-    if (openedRowKey === rowKey) {
-      setOpenedRowKey(null)
-      setAgentDetail(null)
-      setDetailError(null)
-      return
-    }
-
-    setOpenedRowKey(rowKey)
-    setDetailLoading(true)
-    setDetailError(null)
-    try {
-      const payload = {
-        user_id: userId,
-        daterange: { from: dateFrom, to: dateTo },
+  const fetchAllDetails = useCallback(async (bureaux: BureauRecapView[]) => {
+    const allRows: Array<{ userId: number; rowKey: string }> = []
+    for (const bureau of bureaux) {
+      for (const row of bureau.rows) {
+        const rowKey = `${bureau.bureau_id}-${row.user_id}-${row.month}`
+        allRows.push({ userId: row.user_id, rowKey })
       }
-      const res = await axios.post<AgentDetailResponse>(`${API}/presence/agent-detail`, payload)
-      const enrichedDays = fillWeekdays(res.data.days, res.data.daterange.from, res.data.daterange.to)
-      const enriched = { ...res.data, days: enrichedDays }
-      setAgentDetail(enriched)
-      // Calcul du non_pointe depuis le détail et mise en cache
-      const np = enrichedDays.filter((d) => {
-        const key = normalizeStatus(d.status)
-        return !resolveCheckinTime(d) && key !== 'absent' && key !== 'conge'
-      }).length
-      setNonPointeCache((prev) => ({ ...prev, [rowKey]: np }))
-    } catch (err: any) {
-      const mockDetail = { ...MOCK_AGENT_DETAIL, user_id: userId }
-      const enrichedMockDays = fillWeekdays(mockDetail.days, mockDetail.daterange.from, mockDetail.daterange.to)
-      const enrichedMock = { ...mockDetail, days: enrichedMockDays }
-      setAgentDetail(enrichedMock)
-      const np = enrichedMockDays.filter((d) => {
-        const key = normalizeStatus(d.status)
-        return !resolveCheckinTime(d) && key !== 'absent' && key !== 'conge'
-      }).length
-      setNonPointeCache((prev) => ({ ...prev, [rowKey]: np }))
-      setDetailError(err?.response?.data?.message || 'Detail indisponible, affichage mock temporaire.')
-    } finally {
-      setDetailLoading(false)
     }
-  }, [API, dateFrom, dateTo, openedRowKey])
+    if (allRows.length === 0) return
+    setDetailsLoading(true)
+    await Promise.allSettled(
+      allRows.map(async ({ userId, rowKey }) => {
+        try {
+          const payload = { user_id: userId, daterange: { from: dateFrom, to: dateTo } }
+          const res = await axios.post<AgentDetailResponse>(`${API}/presence/agent-detail`, payload)
+          const enrichedDays = fillWeekdays(res.data.days, res.data.daterange.from, res.data.daterange.to)
+          const enriched = { ...res.data, days: enrichedDays }
+          setAgentDetails((prev) => ({ ...prev, [rowKey]: enriched }))
+          const np = enrichedDays.filter((d) => {
+            const key = normalizeStatus(d.status)
+            return !resolveCheckinTime(d) && key !== 'absent' && key !== 'conge'
+          }).length
+          setNonPointeCache((prev) => ({ ...prev, [rowKey]: np }))
+        } catch {
+          // silencieux — non pointé reste '—' si l'API échoue pour cet agent
+        }
+      })
+    )
+    setDetailsLoading(false)
+  }, [API, dateFrom, dateTo])
+
+  useEffect(() => {
+    if (bureauxData.length > 0) {
+      fetchAllDetails(bureauxData)
+    }
+  }, [bureauxData, fetchAllDetails])
+
+  const toggleDetail = useCallback((rowKey: string) => {
+    setOpenedRowKey((prev) => (prev === rowKey ? null : rowKey))
+  }, [])
 
   const visibleBureaux = useMemo(() => {
     if (bureauxData.length === 0) return []
@@ -460,8 +428,9 @@ const CrmRecap: React.FC = () => {
 
   const detailCounters = useMemo(() => {
     const base = { present: 0, absent: 0, conge: 0, retard: 0, non_pointe: 0 }
-    if (!agentDetail?.days) return base
-    return agentDetail.days.reduce((acc, day) => {
+    const detail = openedRowKey ? agentDetails[openedRowKey] : null
+    if (!detail?.days) return base
+    return detail.days.reduce((acc, day) => {
       const key = normalizeStatus(day.status)
       if (key === 'present') acc.present += 1
       if (key === 'absent') acc.absent += 1
@@ -470,7 +439,7 @@ const CrmRecap: React.FC = () => {
       if (!day.checkin_time && key !== 'absent' && key !== 'conge') acc.non_pointe += 1
       return acc
     }, base)
-  }, [agentDetail])
+  }, [agentDetails, openedRowKey])
 
   return (
     <div className="presence-page">
@@ -551,8 +520,8 @@ const CrmRecap: React.FC = () => {
                 <input
                   id="crm-from"
                   type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
+                  value={inputFrom}
+                  onChange={(e) => setInputFrom(e.target.value)}
                 />
               </div>
 
@@ -561,8 +530,8 @@ const CrmRecap: React.FC = () => {
                 <input
                   id="crm-to"
                   type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
+                  value={inputTo}
+                  onChange={(e) => setInputTo(e.target.value)}
                 />
               </div>
 
@@ -577,7 +546,7 @@ const CrmRecap: React.FC = () => {
                 />
               </div>
 
-              <button className="btn-refresh" onClick={fetchRecap}>{lang === 'en' ? 'Refresh' : 'Rafraîchir'}</button>
+              <button className="btn-refresh" onClick={() => { setDateFrom(inputFrom); setDateTo(inputTo) }}>{lang === 'en' ? 'Refresh' : 'Rafraîchir'}</button>
             </section>
 
             <section className="crm-bureaux-list">
@@ -639,7 +608,7 @@ const CrmRecap: React.FC = () => {
                                     <button
                                       type="button"
                                       className="crm-row-trigger"
-                                      onClick={() => openAgentDetail(row.user_id, rowKey)}
+                                      onClick={() => toggleDetail(rowKey)}
                                     >
                                       {row.username}
                                     </button>
@@ -655,18 +624,17 @@ const CrmRecap: React.FC = () => {
                                   <tr className="crm-detail-row">
                                     <td colSpan={7}>
                                       <div className="crm-detail-panel">
-                                        {detailLoading && <div className="week-loading">{lang === 'en' ? 'Loading agent detail...' : 'Chargement du détail agent...'}</div>}
-                                        {detailError && <div className="alert-error">{detailError}</div>}
+                                        {!agentDetails[rowKey] && detailsLoading && <div className="week-loading">{lang === 'en' ? 'Loading agent detail...' : 'Chargement du détail agent...'}</div>}
 
-                                        {!detailLoading && agentDetail && (
+                                        {agentDetails[rowKey] && (
                                           <>
                                             <div className="crm-detail-head">
                                               <div>
-                                                <h3>{agentDetail.username}</h3>
+                                                <h3>{agentDetails[rowKey].username}</h3>
                                               </div>
                                               <div className="crm-detail-meta">
                                                 <span>Seuil: {effectiveThreshold}</span>
-                                                <span>{lang === 'en' ? 'Total days' : 'Total jours'}: {agentDetail.total_days}</span>
+                                                <span>{lang === 'en' ? 'Total days' : 'Total jours'}: {agentDetails[rowKey].total_days}</span>
                                               </div>
                                             </div>
 
@@ -691,7 +659,7 @@ const CrmRecap: React.FC = () => {
                                                   </tr>
                                                 </thead>
                                                 <tbody>
-                                                  {agentDetail.days.map((d) => (
+                                                  {agentDetails[rowKey].days.map((d) => (
                                                     <tr key={`${d.date}-${d.checkin_time ?? 'no-checkin'}`}>
                                                       <td>{formatDayLabel(d.date, locale)}</td>
                                                       <td>

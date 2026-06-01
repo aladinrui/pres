@@ -185,7 +185,7 @@ const ManagerDash: React.FC = () => {
   const [nomPresenceDraft, setNomPresenceDraft] = useState('')
   const [renaming, setRenaming] = useState(false)
   const [renameError, setRenameError] = useState<string | null>(null)
-  const [threshold, setThreshold] = useState('10:30')
+  const [threshold, setThreshold] = useState(bureauId === 8 ? '10:00' : '10:30')
 
   const fetchDay = useCallback(async (date: string) => {
     if (!bureauId) return

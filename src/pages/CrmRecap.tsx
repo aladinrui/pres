@@ -16,6 +16,7 @@ type AgentRecap = {
   absences_count: number
   retards_count: number
   conges_count: number
+  non_pointe_count?: number
 }
 
 type DateRange = {
@@ -117,6 +118,7 @@ function statusLabel(status: string): string {
   if (key === 'absent') return 'Absent'
   if (key === 'conge') return 'Conge'
   if (key === 'retard') return 'Present'
+  if (key === 'non_pointe') return 'Non pointé'
   return status
 }
 
@@ -126,6 +128,7 @@ function statusClass(status: string): string {
   if (key === 'absent') return 'status-absent'
   if (key === 'conge') return 'status-conge'
   if (key === 'retard') return 'status-present'
+  if (key === 'non_pointe') return 'status-non-pointe'
   return ''
 }
 
@@ -146,7 +149,14 @@ function resolveCheckinTime(day: AgentDetailDay): string | null {
 function formatCheckinHHMM(day: AgentDetailDay): string | null {
   const raw = resolveCheckinTime(day)
   if (!raw) return null
-  return parseToCairoHHMM(raw)
+  const trimmed = raw.trim()
+  // Full timestamp (e.g. "2026-05-04 08:16:10" or ISO with T) → convert UTC → Cairo
+  if (/^\d{4}-/.test(trimmed) || trimmed.includes('T')) {
+    return parseToCairoHHMM(trimmed)
+  }
+  // Plain "HH:MM" or "HH:MM:SS" — already in local (Cairo) time, just extract HH:MM
+  const parts = trimmed.split(':')
+  return `${(parts[0] ?? '00').padStart(2, '0')}:${(parts[1] ?? '00').padStart(2, '0')}`
 }
 
 function formatDayLabel(iso: string, locale: string): string {
@@ -184,6 +194,26 @@ function isRetardDay(day: AgentDetailDay, scheduleStart: string): boolean {
   return checkinSec > startSec
 }
 
+/** Insère les jours ouvrables (lun-ven) manquants dans la plage comme lignes 'non_pointe' */
+function fillWeekdays(days: AgentDetailDay[], from: string, to: string): AgentDetailDay[] {
+  const existing = new Set(days.map((d) => d.date))
+  const result: AgentDetailDay[] = [...days]
+  const end = new Date(to + 'T00:00:00')
+  const cur = new Date(from + 'T00:00:00')
+  while (cur <= end) {
+    const dow = cur.getDay() // 0=dim, 6=sam
+    if (dow !== 0 && dow !== 6) {
+      const iso = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`
+      if (!existing.has(iso)) {
+        result.push({ date: iso, status: 'non_pointe', checkin_time: null, is_retard: false, note: null })
+      }
+    }
+    cur.setDate(cur.getDate() + 1)
+  }
+  result.sort((a, b) => a.date.localeCompare(b.date))
+  return result
+}
+
 const CrmRecap: React.FC = () => {
   const dispatch = useAppDispatch()
   const userDetail = useAppSelector((s) => s.user.userDetail)
@@ -219,7 +249,7 @@ const CrmRecap: React.FC = () => {
 
   const today = toBusinessISODate()
   const [dateTo, setDateTo] = useState<string>(today)
-  const [dateFrom, setDateFrom] = useState<string>(addDaysToIsoDate(today, -30))
+  const [dateFrom, setDateFrom] = useState<string>('2026-06-01')
 
   const [bureauxData, setBureauxData] = useState<BureauRecapView[]>([])
   const [loading, setLoading] = useState(true)
@@ -234,6 +264,10 @@ const CrmRecap: React.FC = () => {
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [agentDetail, setAgentDetail] = useState<AgentDetailResponse | null>(null)
+  // Cache non_pointe_count calculé depuis le détail : clé = "bureauId-userId-month"
+  const [nonPointeCache, setNonPointeCache] = useState<Record<string, number>>({})
+  // Seuils personnalisés par bureau (override du schedule_start de l'API)
+  const [bureauThresholds, setBureauThresholds] = useState<Record<number, string>>({})
 
   const availableBureaux = useMemo(() => {
     const fromApi = bureauxData.map((b) => b.bureau_id)
@@ -304,6 +338,7 @@ const CrmRecap: React.FC = () => {
       setOpenedRowKey(null)
       setAgentDetail(null)
       setDetailError(null)
+      setNonPointeCache({})
       setLoading(false)
     }
   }, [API, bureauIdsForApi, dateFrom, dateTo, selectedBureau])
@@ -311,6 +346,38 @@ const CrmRecap: React.FC = () => {
   useEffect(() => {
     fetchRecap()
   }, [fetchRecap])
+
+  // Calcul en arrière-plan du non_pointe pour tous les agents dès que le récap est chargé
+  useEffect(() => {
+    if (bureauxData.length === 0) return
+    const tasks: Array<{ bureauId: number; userId: number; month: string; rowKey: string }> = []
+    bureauxData.forEach((b) => {
+      b.rows.forEach((row) => {
+        const rowKey = `${b.bureau_id}-${row.user_id}-${row.month}`
+        tasks.push({ bureauId: b.bureau_id, userId: row.user_id, month: row.month, rowKey })
+      })
+    })
+    if (tasks.length === 0) return
+    let cancelled = false
+    ;(async () => {
+      for (const t of tasks) {
+        if (cancelled) break
+        try {
+          const payload = { user_id: t.userId, daterange: { from: dateFrom, to: dateTo } }
+          const res = await axios.post<AgentDetailResponse>(`${API}/presence/agent-detail`, payload)
+          const enrichedDays = fillWeekdays(res.data.days, res.data.daterange.from, res.data.daterange.to)
+          const np = enrichedDays.filter((d) => {
+            const key = normalizeStatus(d.status)
+            return !resolveCheckinTime(d) && key !== 'absent' && key !== 'conge'
+          }).length
+          if (!cancelled) setNonPointeCache((prev) => ({ ...prev, [t.rowKey]: np }))
+        } catch {
+          // silencieux
+        }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [bureauxData, API, dateFrom, dateTo])
 
   useEffect(() => {
     if (selectedBureau === 'all') return
@@ -336,9 +403,25 @@ const CrmRecap: React.FC = () => {
         daterange: { from: dateFrom, to: dateTo },
       }
       const res = await axios.post<AgentDetailResponse>(`${API}/presence/agent-detail`, payload)
-      setAgentDetail(res.data)
+      const enrichedDays = fillWeekdays(res.data.days, res.data.daterange.from, res.data.daterange.to)
+      const enriched = { ...res.data, days: enrichedDays }
+      setAgentDetail(enriched)
+      // Calcul du non_pointe depuis le détail et mise en cache
+      const np = enrichedDays.filter((d) => {
+        const key = normalizeStatus(d.status)
+        return !resolveCheckinTime(d) && key !== 'absent' && key !== 'conge'
+      }).length
+      setNonPointeCache((prev) => ({ ...prev, [rowKey]: np }))
     } catch (err: any) {
-      setAgentDetail({ ...MOCK_AGENT_DETAIL, user_id: userId })
+      const mockDetail = { ...MOCK_AGENT_DETAIL, user_id: userId }
+      const enrichedMockDays = fillWeekdays(mockDetail.days, mockDetail.daterange.from, mockDetail.daterange.to)
+      const enrichedMock = { ...mockDetail, days: enrichedMockDays }
+      setAgentDetail(enrichedMock)
+      const np = enrichedMockDays.filter((d) => {
+        const key = normalizeStatus(d.status)
+        return !resolveCheckinTime(d) && key !== 'absent' && key !== 'conge'
+      }).length
+      setNonPointeCache((prev) => ({ ...prev, [rowKey]: np }))
       setDetailError(err?.response?.data?.message || 'Detail indisponible, affichage mock temporaire.')
     } finally {
       setDetailLoading(false)
@@ -362,8 +445,8 @@ const CrmRecap: React.FC = () => {
             )
           })
           .sort((a, b2) => {
-            const totalA = a.absences_count + a.retards_count + a.conges_count
-            const totalB = b2.absences_count + b2.retards_count + b2.conges_count
+            const totalA = a.absences_count + a.retards_count + a.conges_count + (a.non_pointe_count ?? 0)
+            const totalB = b2.absences_count + b2.retards_count + b2.conges_count + (b2.non_pointe_count ?? 0)
             return totalB - totalA
           })
 
@@ -376,7 +459,7 @@ const CrmRecap: React.FC = () => {
   }, [bureauxData, selectedBureau, search])
 
   const detailCounters = useMemo(() => {
-    const base = { present: 0, absent: 0, conge: 0, retard: 0 }
+    const base = { present: 0, absent: 0, conge: 0, retard: 0, non_pointe: 0 }
     if (!agentDetail?.days) return base
     return agentDetail.days.reduce((acc, day) => {
       const key = normalizeStatus(day.status)
@@ -384,6 +467,7 @@ const CrmRecap: React.FC = () => {
       if (key === 'absent') acc.absent += 1
       if (key === 'conge') acc.conge += 1
       if (day.is_retard) acc.retard += 1
+      if (!day.checkin_time && key !== 'absent' && key !== 'conge') acc.non_pointe += 1
       return acc
     }, base)
   }, [agentDetail])
@@ -487,7 +571,7 @@ const CrmRecap: React.FC = () => {
                 <input
                   id="crm-search"
                   type="text"
-                  placeholder="Ex: CARON, agent, manager..."
+                  placeholder="Ex: agent, manager..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -504,6 +588,9 @@ const CrmRecap: React.FC = () => {
                   const bAbs = bureau.rows.reduce((acc, a) => acc + a.absences_count, 0)
                   const bRet = bureau.rows.reduce((acc, a) => acc + a.retards_count, 0)
                   const bCon = bureau.rows.reduce((acc, a) => acc + a.conges_count, 0)
+                  // Seuil effectif : override local ou valeur API (on normalise en HH:MM pour l'input)
+                  const apiThreshold = bureau.schedule_start.substring(0, 5)
+                  const effectiveThreshold = bureauThresholds[bureau.bureau_id] ?? apiThreshold
 
                   return (
                     <article key={bureau.bureau_id} className="crm-bureau-card">
@@ -511,7 +598,16 @@ const CrmRecap: React.FC = () => {
                         <h2>{bureau.bureau_name ? `${bureau.bureau_name} (${bureau.bureau_id})` : `Bureau ${bureau.bureau_id}`}</h2>
                         <div className="crm-bureau-stats">
                           <span>{bureau.total_records} {lang === 'en' ? 'rows' : 'lignes'}</span>
-                          <span>{lang === 'en' ? 'Threshold:' : 'Seuil:'} {bureau.schedule_start}</span>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                            {lang === 'en' ? '⏰ Threshold:' : '⏰ Seuil:'}
+                            <input
+                              type="time"
+                              className="threshold-input"
+                              value={effectiveThreshold}
+                              onChange={(e) => setBureauThresholds((prev) => ({ ...prev, [bureau.bureau_id]: e.target.value }))}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </label>
                           <span className="crm-pill crm-pill-abs">{lang === 'en' ? 'Abs' : 'Abs'}: {bAbs}</span>
                           <span className="crm-pill crm-pill-ret">{lang === 'en' ? 'Late' : 'Ret'}: {bRet}</span>
                           <span className="crm-pill crm-pill-con">{lang === 'en' ? 'Leave' : 'Congé'}: {bCon}</span>
@@ -527,6 +623,7 @@ const CrmRecap: React.FC = () => {
                               <th>{lang === 'en' ? 'Absences' : 'Absences'}</th>
                               <th>{lang === 'en' ? 'Lates' : 'Retards'}</th>
                               <th>{lang === 'en' ? 'Leave' : 'Congés'}</th>
+                              <th>{lang === 'en' ? 'Not clocked' : 'Non pointé'}</th>
                               <th>{lang === 'en' ? 'Total alerts' : 'Total alertes'}</th>
                             </tr>
                           </thead>
@@ -551,11 +648,12 @@ const CrmRecap: React.FC = () => {
                                   <td>{row.absences_count}</td>
                                   <td>{row.retards_count}</td>
                                   <td>{row.conges_count}</td>
+                                  <td>{row.non_pointe_count ?? nonPointeCache[rowKey] ?? '—'}</td>
                                   <td><strong>{total}</strong></td>
                                 </tr>
                                 {isOpen && (
                                   <tr className="crm-detail-row">
-                                    <td colSpan={6}>
+                                    <td colSpan={7}>
                                       <div className="crm-detail-panel">
                                         {detailLoading && <div className="week-loading">{lang === 'en' ? 'Loading agent detail...' : 'Chargement du détail agent...'}</div>}
                                         {detailError && <div className="alert-error">{detailError}</div>}
@@ -567,7 +665,7 @@ const CrmRecap: React.FC = () => {
                                                 <h3>{agentDetail.username}</h3>
                                               </div>
                                               <div className="crm-detail-meta">
-                                                <span>Seuil: {agentDetail.schedule_start}</span>
+                                                <span>Seuil: {effectiveThreshold}</span>
                                                 <span>{lang === 'en' ? 'Total days' : 'Total jours'}: {agentDetail.total_days}</span>
                                               </div>
                                             </div>
@@ -577,6 +675,7 @@ const CrmRecap: React.FC = () => {
                                               <span className="crm-pill crm-pill-abs">Absent: {detailCounters.absent}</span>
                                               <span className="crm-pill crm-pill-ret">Retard: {detailCounters.retard}</span>
                                               <span className="crm-pill crm-pill-con">Conge: {detailCounters.conge}</span>
+                                              <span className="crm-pill" style={{ background: '#374151', color: '#fff' }}>{lang === 'en' ? 'Not clocked' : 'Non pointé'}: {detailCounters.non_pointe}</span>
                                             </div>
 
                                             <div className="crm-days-scroll">
@@ -587,6 +686,7 @@ const CrmRecap: React.FC = () => {
                                                     <th>{lang === 'en' ? 'Status' : 'Statut'}</th>
                                                     <th>Checkin</th>
                                                     <th>{lang === 'en' ? 'Late' : 'Retard'}</th>
+                                                    <th>{lang === 'en' ? 'Not clocked' : 'Non pointé'}</th>
                                                     <th>Note</th>
                                                   </tr>
                                                 </thead>
@@ -601,11 +701,20 @@ const CrmRecap: React.FC = () => {
                                                       </td>
                                                       <td>{formatCheckinHHMM(d) ?? '—'}</td>
                                                       <td>
-                                                        {isRetardDay(d, agentDetail.schedule_start) ? (
+                                                        {isRetardDay(d, effectiveThreshold) ? (
                                                           <span className="crm-retard-badge crm-retard-badge--yes">{lang === 'en' ? 'Yes' : 'Oui'}</span>
                                                         ) : (
                                                           <span className="crm-retard-badge crm-retard-badge--no">{lang === 'en' ? 'No' : 'Non'}</span>
                                                         )}
+                                                      </td>
+                                                      <td>
+                                                        {(() => {
+                                                          const key = normalizeStatus(d.status)
+                                                          const isNP = !resolveCheckinTime(d) && key !== 'absent' && key !== 'conge'
+                                                          return isNP
+                                                            ? <span className="crm-retard-badge crm-retard-badge--yes">{lang === 'en' ? 'Yes' : 'Oui'}</span>
+                                                            : <span className="crm-retard-badge crm-retard-badge--no">{lang === 'en' ? 'No' : 'Non'}</span>
+                                                        })()}
                                                       </td>
                                                       <td>{d.note ?? '—'}</td>
                                                     </tr>

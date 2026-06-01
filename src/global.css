@@ -360,6 +360,7 @@ html, body, #root {
 .status-absent  { color: var(--color-out); border-color: var(--color-out); background: var(--color-out-bg); }
 .status-partial { color: #f59e0b; border-color: #f59e0b; background: #2d1b00; }
 .status-conge   { color: #818cf8; border-color: #818cf8; background: #1e1b4b; }
+.status-non-pointe { color: #9ca3af; border-color: #4b5563; background: #1f2937; }
 
 /* Log note */
 .log-note-section {

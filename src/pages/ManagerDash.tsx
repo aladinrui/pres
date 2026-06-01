@@ -145,7 +145,7 @@ const ManagerDash: React.FC = () => {
   const profil = (userDetail?.profil as string) ?? ''
   const profileLower = profil.toLowerCase()
   const isAdmin = profil === 'admin' || profil === 'superadmin'
-  const canOpenCrmRecap = ['crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower)
+  const canOpenCrmRecap = ['man', 'manager', 'crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower)
     && userDetail?.tenant !== 'tod'
   const managedBureauIds = Array.from(new Set((userDetail?.bureaux ?? [])
     .map((b: any) => Number(b?.id))

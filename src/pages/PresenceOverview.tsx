@@ -138,7 +138,7 @@ const PresenceOverview: React.FC = () => {
   const profil    = (userDetail?.profil as string) ?? ''
   const isAdmin   = profil === 'admin' || profil === 'superadmin'
   const profileLower = profil.toLowerCase()
-  const canOpenCrmRecap = ['crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower)
+  const canOpenCrmRecap = ['man', 'manager', 'crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower)
     && userDetail?.tenant !== 'tod'
   // Noms : JWT en priorité, fallback sur noms connus (pres : CRN/STV/etc, tod : du JWT)
   const bureauNameMap = buildBureauNameMap(userDetail?.bureaux)

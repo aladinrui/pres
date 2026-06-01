@@ -29,7 +29,7 @@ const isIpCheckAllowed = (payload: unknown): boolean => {
 const MANAGER_ROLES    = ['man', 'manager', 'crm_manager', 'crm manager', 'admin', 'superadmin']
 const ADMIN_ROLES      = ['admin', 'superadmin']
 const DAY_ROLES        = ['man', 'manager', 'crm_manager', 'crm manager']
-const CRM_MANAGER_ROLES = ['crm_manager', 'crm manager', 'admin', 'superadmin']
+const CRM_MANAGER_ROLES = ['man', 'manager', 'crm_manager', 'crm manager', 'admin', 'superadmin']
 const CRM_ONLY_ROLES = ['crm_manager', 'crm manager']
 
 const ManagerRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => (

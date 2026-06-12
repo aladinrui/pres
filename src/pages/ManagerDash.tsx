@@ -147,6 +147,7 @@ const ManagerDash: React.FC = () => {
   const isAdmin = profil === 'admin' || profil === 'superadmin'
   const canOpenCrmRecap = ['man', 'manager', 'crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower)
     && userDetail?.tenant !== 'tod'
+  const canEditHours = ['man', 'manager', 'crm_manager', 'crm manager', 'admin', 'superadmin'].includes(profileLower)
   const managedBureauIds = Array.from(new Set((userDetail?.bureaux ?? [])
     .map((b: any) => Number(b?.id))
     .filter((id) => Number.isFinite(id) && id > 0)
@@ -172,6 +173,11 @@ const ManagerDash: React.FC = () => {
 
   // Logs expandés
   const [expandedUser, setExpandedUser] = useState<number | null>(null)
+
+  // Édition heure d'arrivée (colonne retard)
+  const [editingHoursUserId, setEditingHoursUserId] = useState<number | null>(null)
+  const [hoursDraft, setHoursDraft] = useState<string>('')
+  const [savingHours, setSavingHours] = useState(false)
 
   // Modal annotation
   const [editingUser, setEditingUser] = useState<UserDay | null>(null)
@@ -287,6 +293,25 @@ const ManagerDash: React.FC = () => {
       setRenameError(err?.response?.data?.message || (lang === 'en' ? 'Rename error' : 'Erreur lors du renommage'))
     } finally {
       setRenaming(false)
+    }
+  }
+
+  const handleSaveHours = async (userId: number) => {
+    if (!hoursDraft) return
+    setSavingHours(true)
+    try {
+      await axios.post(`${API}/presence/update_hours`, {
+        user_id: userId,
+        NewHours: `${selectedDate} ${hoursDraft}`,
+        ref_date: selectedDate,
+      })
+      setEditingHoursUserId(null)
+      setHoursDraft('')
+      await fetchDay(selectedDate)
+    } catch (err: any) {
+      setError(err?.response?.data?.message || (lang === 'en' ? 'Update error' : 'Erreur lors de la mise à jour'))
+    } finally {
+      setSavingHours(false)
     }
   }
 
@@ -472,6 +497,44 @@ const ManagerDash: React.FC = () => {
                           </>
                         )
                       })()}
+                      {canEditHours && (
+                        editingHoursUserId === user.user_id ? (
+                          <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: 4 }}>
+                            <input
+                              type="time"
+                              className="date-picker"
+                              value={hoursDraft}
+                              onChange={(e) => setHoursDraft(e.target.value)}
+                              style={{ fontSize: 12, padding: '2px 4px' }}
+                            />
+                            <button
+                              onClick={() => handleSaveHours(user.user_id)}
+                              disabled={savingHours || !hoursDraft}
+                              style={{ fontSize: 11, padding: '2px 6px', background: '#22c55e', border: 'none', borderRadius: 4, color: '#fff', cursor: 'pointer' }}
+                            >
+                              ✓
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setEditingHoursUserId(null); setHoursDraft('') }}
+                              style={{ fontSize: 11, padding: '2px 6px', background: '#475569', border: 'none', borderRadius: 4, color: '#fff', cursor: 'pointer' }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const ci = firstCheckin(user)
+                              setHoursDraft(ci ? formatTime(ci, bureauId) : '')
+                              setEditingHoursUserId(user.user_id)
+                            }}
+                            style={{ fontSize: 11, padding: '2px 6px', background: 'transparent', border: '1px solid #334155', borderRadius: 4, color: '#94a3b8', cursor: 'pointer', marginLeft: 4 }}
+                          >
+                            ✎
+                          </button>
+                        )
+                      )}
                       {user.note && <span className="status-col-note">{user.note}</span>}
                     </div>
                   </div>
@@ -480,7 +543,7 @@ const ManagerDash: React.FC = () => {
               </div>
             </div>
 
-            {/* Absents / Congés */}
+            {/* a */}
             <div className="status-col">
               <div className="status-col-header status-col-header--absent">
                 <span>{lang === 'en' ? '✗ Absent / Leave' : '✗ Absents / Congés'}</span>

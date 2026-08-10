@@ -386,7 +386,7 @@ const Presence: React.FC = () => {
                 <h2>{lang === 'en' ? `Week ${getWeekNumber(now)}` : `Semaine ${getWeekNumber(now)}`}</h2>
                 {weekData && (
                   <span className="week-range">
-                    {formatShortDate(weekData.from)} → {formatShortDate(weekData.to)}
+                    {formatShortDate(weekData.from, MOIS)} → {formatShortDate(weekData.to, MOIS)}
                   </span>
                 )}
               </div>
@@ -475,7 +475,7 @@ const Presence: React.FC = () => {
               {/* Navigation mois */}
               <div className="month-nav">
                 <button className="date-nav-btn" onClick={() => goMonth(-1)}>&#8249;</button>
-                <span className="month-nav-label">{formatMonthLabel(monthYM)}</span>
+                <span className="month-nav-label">{formatMonthLabel(monthYM, MOIS)}</span>
                 <button
                   className="date-nav-btn"
                   onClick={() => goMonth(1)}
@@ -512,7 +512,7 @@ const Presence: React.FC = () => {
                         onClick={() => setExpandedDay(expandedDay === day.id ? null : day.id)}
                       >
                         <div className="month-day-left">
-                          <span className="month-day-date">{formatDayShort(day.date)}</span>
+                          <span className="month-day-date">{formatDayShort(day.date, JOURS_COURT)}</span>
                           <span className={`week-status-dot ws-${day.status}`} />
                           {/* Heures arrivée / départ visibles d'un coup d'oeil */}
                           {(() => {
@@ -614,19 +614,19 @@ function toYearMonthLocal(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-function formatShortDate(iso: string): string {
+function formatShortDate(iso: string, mois: string[]): string {
   const d = new Date(iso + 'T00:00:00')
-  return `${d.getDate()} ${MOIS[d.getMonth()]}`
+  return `${d.getDate()} ${mois[d.getMonth()]}`
 }
 
-function formatMonthLabel(ym: string): string {
+function formatMonthLabel(ym: string, mois: string[]): string {
   const [y, m] = ym.split('-').map(Number)
-  return `${MOIS[m - 1]} ${y}`
+  return `${mois[m - 1]} ${y}`
 }
 
-function formatDayShort(iso: string): string {
+function formatDayShort(iso: string, joursCourt: string[]): string {
   const d = new Date(iso + 'T00:00:00')
-  return `${JOURS_COURT[d.getDay()]} ${d.getDate()}`
+  return `${joursCourt[d.getDay()]} ${d.getDate()}`
 }
 
 export default Presence

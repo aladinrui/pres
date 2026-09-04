@@ -5,10 +5,8 @@ import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logout } from '../features/auth/authSlice'
 import { buildBureauNameMap } from '../utils/bureaux'
 import {
-  convertUtcHHMMToBusinessHHMM,
   formatTimeForBureau,
   toBusinessISODate,
-  parseBackendTimestampToCairoMinutes,
 } from '../utils/businessTime'
 import { useLang, getMois, getJoursCourt } from '../utils/i18n'
 
@@ -113,21 +111,32 @@ function firstCheckin(user: UserDay): string | null {
   return ins.length > 0 ? ins[0].timestamp : null
 }
 
-function isLate(user: UserDay, threshold: string, _date: string): boolean {
+function hhmmToMinutes(hhmm: string): number {
+  const [hh, mm] = hhmm.split(':').map(Number)
+  return hh * 60 + mm
+}
+
+function defaultThresholdForBureau(id: number): string {
+  // MRO / MRO2 : 09:05 — JC : 10:00 — autres : 10:30
+  if (id === 5 || id === 12) return '09:05'
+  if (id === 8) return '10:00'
+  return '10:30'
+}
+
+function isLate(user: UserDay, threshold: string, bureauId: number): boolean {
   const ci = firstCheckin(user)
   if (!ci) return false
-  const cairoMin = parseBackendTimestampToCairoMinutes(ci)
-  if (cairoMin === null) return false
-  const [th, tm] = threshold.split(':').map(Number)
-  return cairoMin > th * 60 + tm
+  const t = formatTime(ci, bureauId)
+  if (!t) return false
+  return hhmmToMinutes(t) > hhmmToMinutes(threshold)
 }
 
 /** Retourne le statut enrichi pour un agent */
-function enrichedStatus(user: UserDay, threshold: string, date: string): 'present' | 'present_late' | 'retard' | 'absent' | 'non_pointe' | 'conge' {
+function enrichedStatus(user: UserDay, threshold: string, bureauId: number): 'present' | 'present_late' | 'retard' | 'absent' | 'non_pointe' | 'conge' {
   if (user.status === 'absent') return 'absent'
   if (user.status === 'conge')  return 'conge'
   if (user.status === 'retard') return 'retard'
-  if (isLate(user, threshold, date)) return 'present_late'
+  if (isLate(user, threshold, bureauId)) return 'present_late'
   if (user.last_action === 'in' || user.status === 'present') return 'present'
   return 'non_pointe'
 }
@@ -191,7 +200,7 @@ const ManagerDash: React.FC = () => {
   const [nomPresenceDraft, setNomPresenceDraft] = useState('')
   const [renaming, setRenaming] = useState(false)
   const [renameError, setRenameError] = useState<string | null>(null)
-  const [threshold, setThreshold] = useState(bureauId === 8 ? '10:00' : '10:30')
+  const [threshold, setThreshold] = useState(defaultThresholdForBureau(bureauId))
 
   const fetchDay = useCallback(async (date: string) => {
     if (!bureauId) return
@@ -214,6 +223,11 @@ const ManagerDash: React.FC = () => {
   useEffect(() => {
     fetchDay(selectedDate)
   }, [fetchDay, selectedDate])
+
+  useEffect(() => {
+    if (!bureauId) return
+    setThreshold(defaultThresholdForBureau(bureauId))
+  }, [bureauId])
 
   const goDay = (n: number) => {
     const next = addDays(selectedDate, n)
@@ -318,11 +332,11 @@ const ManagerDash: React.FC = () => {
   const currentDay: DayEntry | null = data?.days?.[0] ?? null
   const users: UserDay[] = currentDay?.users ?? []
 
-  const lateCount    = users.filter((u) => ['present_late', 'retard'].includes(enrichedStatus(u, threshold, selectedDate))).length
-  const presentCount = users.filter((u) => ['present', 'present_late'].includes(enrichedStatus(u, threshold, selectedDate))).length
-  const absentCount  = users.filter((u) => enrichedStatus(u, threshold, selectedDate) === 'absent').length
-  const congeCount   = users.filter((u) => enrichedStatus(u, threshold, selectedDate) === 'conge').length
-  const notChecked   = users.filter((u) => enrichedStatus(u, threshold, selectedDate) === 'non_pointe').length
+  const lateCount    = users.filter((u) => ['present_late', 'retard'].includes(enrichedStatus(u, threshold, bureauId))).length
+  const presentCount = users.filter((u) => ['present', 'present_late'].includes(enrichedStatus(u, threshold, bureauId))).length
+  const absentCount  = users.filter((u) => enrichedStatus(u, threshold, bureauId) === 'absent').length
+  const congeCount   = users.filter((u) => enrichedStatus(u, threshold, bureauId) === 'conge').length
+  const notChecked   = users.filter((u) => enrichedStatus(u, threshold, bureauId) === 'non_pointe').length
   const isToday      = selectedDate === todayISO()
 
   return (
@@ -452,8 +466,8 @@ const ManagerDash: React.FC = () => {
                 <span className="status-col-count">{presentCount}/{users.length}</span>
               </div>
               <div className="status-col-body">
-                {users.filter((u) => ['present','present_late'].includes(enrichedStatus(u, threshold, selectedDate))).map((user) => {
-                  const es = enrichedStatus(user, threshold, selectedDate)
+                {users.filter((u) => ['present','present_late'].includes(enrichedStatus(u, threshold, bureauId))).map((user) => {
+                  const es = enrichedStatus(user, threshold, bureauId)
                   return (
                     <div key={user.user_id} className="status-col-agent" onClick={() => openEdit(user, selectedDate)} style={{ cursor: 'pointer' }}>
                       <div className="status-col-agent-info">
@@ -467,7 +481,7 @@ const ManagerDash: React.FC = () => {
                     </div>
                   )
                 })}
-                {users.filter((u) => ['present','present_late'].includes(enrichedStatus(u, threshold, selectedDate))).length === 0 && (
+                {users.filter((u) => ['present','present_late'].includes(enrichedStatus(u, threshold, bureauId))).length === 0 && (
                   <div className="status-col-empty">—</div>
                 )}
               </div>
@@ -480,7 +494,7 @@ const ManagerDash: React.FC = () => {
                 <span className="status-col-count">{lateCount}</span>
               </div>
               <div className="status-col-body">
-                {users.filter((u) => ['present_late', 'retard'].includes(enrichedStatus(u, threshold, selectedDate))).map((user) => (
+                {users.filter((u) => ['present_late', 'retard'].includes(enrichedStatus(u, threshold, bureauId))).map((user) => (
                   <div key={user.user_id} className="status-col-agent" onClick={() => openEdit(user, selectedDate)} style={{ cursor: 'pointer' }}>
                     <div className="status-col-agent-info">
                       <span className="agent-name">{user.username}</span>
@@ -550,8 +564,8 @@ const ManagerDash: React.FC = () => {
                 <span className="status-col-count">{absentCount} / {congeCount}</span>
               </div>
               <div className="status-col-body">
-                {users.filter((u) => ['absent','conge'].includes(enrichedStatus(u, threshold, selectedDate))).map((user) => {
-                  const es = enrichedStatus(user, threshold, selectedDate)
+                {users.filter((u) => ['absent','conge'].includes(enrichedStatus(u, threshold, bureauId))).map((user) => {
+                  const es = enrichedStatus(user, threshold, bureauId)
                   return (
                     <div key={user.user_id} className="status-col-agent" onClick={() => openEdit(user, selectedDate)} style={{ cursor: 'pointer' }}>
                       <div className="status-col-agent-info">
@@ -576,7 +590,7 @@ const ManagerDash: React.FC = () => {
                 <span className="status-col-count">{notChecked}</span>
               </div>
               <div className="status-col-body">
-                {users.filter((u) => enrichedStatus(u, threshold, selectedDate) === 'non_pointe').map((user) => (
+                {users.filter((u) => enrichedStatus(u, threshold, bureauId) === 'non_pointe').map((user) => (
                   <div key={user.user_id} className="status-col-agent" onClick={() => openEdit(user, selectedDate)} style={{ cursor: 'pointer' }}>
                     <div className="status-col-agent-info">
                       <span className="agent-name">{user.username}</span>

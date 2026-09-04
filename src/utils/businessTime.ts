@@ -89,7 +89,8 @@ export function parseBackendTimestampToCairoMinutes(value: string): number | nul
 
 /** Bureau-specific hour offsets relative to Cairo (UTC+2). Negative = behind Cairo. */
 export const BUREAU_HOUR_OFFSET: Record<number, number> = {
-  5: -2, // MRO est UTC+0, Cairo est UTC+2
+  5: -2,  // MRO  : UTC+0, Cairo UTC+2
+  12: -2, // MRO2 : même fuseau que MRO
 }
 
 function shiftHHMM(hhmm: string, offsetHours: number): string {

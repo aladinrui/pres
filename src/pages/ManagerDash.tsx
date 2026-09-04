@@ -131,13 +131,16 @@ function isLate(user: UserDay, threshold: string, bureauId: number): boolean {
   return hhmmToMinutes(t) > hhmmToMinutes(threshold)
 }
 
-/** Retourne le statut enrichi pour un agent */
+/** Retourne le statut enrichi pour un agent.
+ *  L'heure locale du bureau (MRO = UTC+0) prime sur le statut backend `retard`
+ *  (souvent calculé en heure du Caire). */
 function enrichedStatus(user: UserDay, threshold: string, bureauId: number): 'present' | 'present_late' | 'retard' | 'absent' | 'non_pointe' | 'conge' {
   if (user.status === 'absent') return 'absent'
   if (user.status === 'conge')  return 'conge'
-  if (user.status === 'retard') return 'retard'
   if (isLate(user, threshold, bureauId)) return 'present_late'
-  if (user.last_action === 'in' || user.status === 'present') return 'present'
+  // Statut manuel `retard` sans check-in : on le garde. Avec un check-in à l'heure : présent.
+  if (user.status === 'retard' && !firstCheckin(user)) return 'retard'
+  if (user.last_action === 'in' || user.status === 'present' || user.status === 'retard') return 'present'
   return 'non_pointe'
 }
 

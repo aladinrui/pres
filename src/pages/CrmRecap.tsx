@@ -248,19 +248,23 @@ function countClassifiedDays(days: AgentDetailDay[], scheduleStart: string) {
   return acc
 }
 
-/** Insère les jours ouvrables (lun-ven) manquants dans la plage comme lignes 'non_pointe' */
+/** Complète la plage : lun-ven manquants = non_pointe, sam/dim manquants = ligne weekend (non comptée). */
 function fillWeekdays(days: AgentDetailDay[], from: string, to: string): AgentDetailDay[] {
   const existing = new Set(days.map((d) => d.date))
   const result: AgentDetailDay[] = [...days]
   const end = new Date(to + 'T00:00:00')
   const cur = new Date(from + 'T00:00:00')
   while (cur <= end) {
-    const dow = cur.getDay() // 0=dim, 6=sam
-    if (dow !== 0 && dow !== 6) {
-      const iso = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`
-      if (!existing.has(iso)) {
-        result.push({ date: iso, status: 'non_pointe', checkin_time: null, is_retard: false, note: null })
-      }
+    const iso = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`
+    if (!existing.has(iso)) {
+      const dow = cur.getDay() // 0=dim, 6=sam
+      result.push({
+        date: iso,
+        status: dow === 0 || dow === 6 ? 'weekend' : 'non_pointe',
+        checkin_time: null,
+        is_retard: false,
+        note: null,
+      })
     }
     cur.setDate(cur.getDate() + 1)
   }

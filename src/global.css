@@ -2895,6 +2895,12 @@ html, body, #root {
   border-bottom: none;
 }
 
+.crm-days-table tbody tr.crm-weekend-row td {
+  color: var(--color-text-muted);
+  opacity: 0.5;
+  font-style: italic;
+}
+
 .crm-retard-badge {
   display: inline-block;
   border: 1px solid;

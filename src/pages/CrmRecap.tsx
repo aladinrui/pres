@@ -166,6 +166,11 @@ function formatCheckinHHMM(day: AgentDetailDay): string | null {
   return `${(parts[0] ?? '00').padStart(2, '0')}:${(parts[1] ?? '00').padStart(2, '0')}`
 }
 
+function isWeekendDate(iso: string): boolean {
+  const dow = new Date(iso + 'T00:00:00').getDay()
+  return dow === 0 || dow === 6
+}
+
 function formatDayLabel(iso: string, locale: string): string {
   const d = new Date(iso + 'T00:00:00')
   return d
@@ -232,6 +237,7 @@ function classifyDay(day: AgentDetailDay, scheduleStart: string): ClassifiedDay 
 function countClassifiedDays(days: AgentDetailDay[], scheduleStart: string) {
   const acc = { present: 0, absent: 0, conge: 0, retard: 0, non_pointe: 0 }
   for (const day of days) {
+    if (isWeekendDate(day.date)) continue
     const c = classifyDay(day, scheduleStart)
     if (c.kind === 'absent') acc.absent += 1
     else if (c.kind === 'conge') acc.conge += 1
@@ -690,7 +696,19 @@ const CrmRecap: React.FC = () => {
                                                   </tr>
                                                 </thead>
                                                 <tbody>
-                                                  {agentDetails[rowKey].days.map((d) => {
+                                                  {aif (isWeekendDate(d.date)) {
+                                                      return (
+                                                        <tr key={`${d.date}-weekend`} className="crm-weekend-row">
+                                                          <td>{formatDayLabel(d.date, locale)}</td>
+                                                          <td>—</td>
+                                                          <td>—</td>
+                                                          <td>—</td>
+                                                          <td>—</td>
+                                                          <td>—</td>
+                                                        </tr>
+                                                      )
+                                                    }
+                                                    gentDetails[rowKey].days.map((d) => {
                                                     const classified = classifyDay(d, effectiveThreshold)
                                                     return (
                                                     <tr key={`${d.date}-${d.checkin_time ?? 'no-checkin'}`}>

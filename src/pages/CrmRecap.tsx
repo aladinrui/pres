@@ -696,7 +696,8 @@ const CrmRecap: React.FC = () => {
                                                   </tr>
                                                 </thead>
                                                 <tbody>
-                                                  {aif (isWeekendDate(d.date)) {
+                                                  {agentDetails[rowKey].days.map((d) => {
+                                                    if (isWeekendDate(d.date)) {
                                                       return (
                                                         <tr key={`${d.date}-weekend`} className="crm-weekend-row">
                                                           <td>{formatDayLabel(d.date, locale)}</td>
@@ -708,7 +709,6 @@ const CrmRecap: React.FC = () => {
                                                         </tr>
                                                       )
                                                     }
-                                                    gentDetails[rowKey].days.map((d) => {
                                                     const classified = classifyDay(d, effectiveThreshold)
                                                     return (
                                                     <tr key={`${d.date}-${d.checkin_time ?? 'no-checkin'}`}>

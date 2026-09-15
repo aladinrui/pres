@@ -112,22 +112,29 @@ function normalizeStatus(value: string): string {
     .replace(/[\u0300-\u036f]/g, '')
 }
 
-function statusLabel(status: string): string {
-  const key = normalizeStatus(status)
-  if (key === 'present') return 'Present'
-  if (key === 'absent') return 'Absent'
-  if (key === 'conge') return 'Conge'
-  if (key === 'retard') return 'Present'
-  if (key === 'non_pointe') return 'Non pointé'
-  return status
+type DayKind = 'present' | 'absent' | 'conge' | 'retard' | 'non_pointe'
+
+type ClassifiedDay = {
+  kind: DayKind
+  checkin: string | null
+  isRetard: boolean
+  isNonPointe: boolean
 }
 
-function statusClass(status: string): string {
-  const key = normalizeStatus(status)
-  if (key === 'present') return 'status-present'
+function statusLabel(kind: DayKind | string): string {
+  const key = normalizeStatus(kind)
+  if (key === 'present' || key === 'retard') return 'Present'
+  if (key === 'absent') return 'Absent'
+  if (key === 'conge') return 'Conge'
+  if (key === 'non_pointe') return 'Non pointé'
+  return kind
+}
+
+function statusClass(kind: DayKind | string): string {
+  const key = normalizeStatus(kind)
+  if (key === 'present' || key === 'retard') return 'status-present'
   if (key === 'absent') return 'status-absent'
   if (key === 'conge') return 'status-conge'
-  if (key === 'retard') return 'status-present'
   if (key === 'non_pointe') return 'status-non-pointe'
   return ''
 }
@@ -184,14 +191,55 @@ function timeToSeconds(value: string | null): number | null {
   return h * 3600 + m * 60 + s
 }
 
-function isRetardDay(day: AgentDetailDay, scheduleStart: string): boolean {
-  if (day.is_retard) return true
-  // Use the Cairo-converted time so the comparison is consistent with schedule_start
+function daysInMonthRange(month: string, from: string, to: string): { from: string; to: string } | null {
+  if (!/^\d{4}-\d{2}$/.test(month)) return null
+  const monthFrom = `${month}-01`
+  const last = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate()
+  const monthTo = `${month}-${String(last).padStart(2, '0')}`
+  const rangeFrom = monthFrom > from ? monthFrom : from
+  const rangeTo = monthTo < to ? monthTo : to
+  if (rangeFrom > rangeTo) return null
+  return { from: rangeFrom, to: rangeTo }
+}
+
+function filterDaysByMonth(days: AgentDetailDay[], month: string): AgentDetailDay[] {
+  if (!month) return days
+  return days.filter((d) => d.date.startsWith(month))
+}
+
+/** Une seule règle pour le détail ET les totaux de la ligne. Statuts exclusifs. */
+function classifyDay(day: AgentDetailDay, scheduleStart: string): ClassifiedDay {
+  const key = normalizeStatus(day.status)
   const checkin = formatCheckinHHMM(day)
   const checkinSec = timeToSeconds(checkin)
   const startSec = timeToSeconds(scheduleStart)
-  if (checkinSec === null || startSec === null) return false
-  return checkinSec > startSec
+  const lateByTime = checkinSec !== null && startSec !== null && checkinSec > startSec
+
+  if (key === 'absent') {
+    return { kind: 'absent', checkin, isRetard: false, isNonPointe: false }
+  }
+  if (key === 'conge') {
+    return { kind: 'conge', checkin, isRetard: false, isNonPointe: false }
+  }
+  if (!checkin) {
+    return { kind: 'non_pointe', checkin: null, isRetard: false, isNonPointe: true }
+  }
+
+  const isRetard = day.is_retard || key === 'retard' || lateByTime
+  return { kind: 'present', checkin, isRetard, isNonPointe: false }
+}
+
+function countClassifiedDays(days: AgentDetailDay[], scheduleStart: string) {
+  const acc = { present: 0, absent: 0, conge: 0, retard: 0, non_pointe: 0 }
+  for (const day of days) {
+    const c = classifyDay(day, scheduleStart)
+    if (c.kind === 'absent') acc.absent += 1
+    else if (c.kind === 'conge') acc.conge += 1
+    else if (c.kind === 'non_pointe') acc.non_pointe += 1
+    else acc.present += 1
+    if (c.isRetard) acc.retard += 1
+  }
+  return acc
 }
 
 /** Insère les jours ouvrables (lun-ven) manquants dans la plage comme lignes 'non_pointe' */
@@ -355,46 +403,33 @@ const CrmRecap: React.FC = () => {
     }
   }, [availableBureaux, selectedBureau])
 
-  const fetchAllDetails = useCallback(async (bureaux: BureauRecapView[]) => {
-    const allRows: Array<{ userId: number; rowKey: string }> = []
-    for (const bureau of bureaux) {
-      for (const row of bureau.rows) {
-        const rowKey = `${bureau.bureau_id}-${row.user_id}-${row.month}`
-        allRows.push({ userId: row.user_id, rowKey })
-      }
-    }
-    if (allRows.length === 0) return
+  const fetchAgentDetail = useCallback(async (userId: number, rowKey: string, month: string) => {
     setDetailsLoading(true)
-    await Promise.allSettled(
-      allRows.map(async ({ userId, rowKey }) => {
-        try {
-          const payload = { user_id: userId, daterange: { from: dateFrom, to: dateTo } }
-          const res = await axios.post<AgentDetailResponse>(`${API}/presence/agent-detail`, payload)
-          const enrichedDays = fillWeekdays(res.data.days, res.data.daterange.from, res.data.daterange.to)
-          const enriched = { ...res.data, days: enrichedDays }
-          setAgentDetails((prev) => ({ ...prev, [rowKey]: enriched }))
-          const np = enrichedDays.filter((d) => {
-            const key = normalizeStatus(d.status)
-            return !resolveCheckinTime(d) && key !== 'absent' && key !== 'conge'
-          }).length
-          setNonPointeCache((prev) => ({ ...prev, [rowKey]: np }))
-        } catch {
-          // silencieux — non pointé reste '—' si l'API échoue pour cet agent
-        }
-      })
-    )
-    setDetailsLoading(false)
-  }, [API, dateFrom, dateTo])
-
-  useEffect(() => {
-    if (bureauxData.length > 0) {
-      fetchAllDetails(bureauxData)
+    try {
+      const monthRange = daysInMonthRange(month, dateFrom, dateTo)
+      const rangeFrom = monthRange?.from ?? dateFrom
+      const rangeTo = monthRange?.to ?? dateTo
+      const payload = { user_id: userId, daterange: { from: rangeFrom, to: rangeTo } }
+      const res = await axios.post<AgentDetailResponse>(`${API}/presence/agent-detail`, payload)
+      const monthDays = filterDaysByMonth(res.data.days ?? [], month)
+      const enrichedDays = fillWeekdays(monthDays, rangeFrom, rangeTo)
+      const enriched = { ...res.data, days: enrichedDays, total_days: enrichedDays.length }
+      setAgentDetails((prev) => ({ ...prev, [rowKey]: enriched }))
+      const counts = countClassifiedDays(enrichedDays, res.data.schedule_start ?? '')
+      setNonPointeCache((prev) => ({ ...prev, [rowKey]: counts.non_pointe }))
+    } catch {
+      // silencieux — le détail reste vide si l'API échoue
+    } finally {
+      setDetailsLoading(false)
     }
-  }, [bureauxData, fetchAllDetails])
+  }, [dateFrom, dateTo])
 
-  const toggleDetail = useCallback((rowKey: string) => {
+  const toggleDetail = useCallback((rowKey: string, userId: number, month: string) => {
     setOpenedRowKey((prev) => (prev === rowKey ? null : rowKey))
-  }, [])
+    if (openedRowKey !== rowKey && !agentDetails[rowKey]) {
+      void fetchAgentDetail(userId, rowKey, month)
+    }
+  }, [agentDetails, fetchAgentDetail, openedRowKey])
 
   const visibleBureaux = useMemo(() => {
     if (bureauxData.length === 0) return []
@@ -413,8 +448,8 @@ const CrmRecap: React.FC = () => {
             )
           })
           .sort((a, b2) => {
-            const totalA = a.absences_count + a.retards_count + a.conges_count + (a.non_pointe_count ?? 0)
-            const totalB = b2.absences_count + b2.retards_count + b2.conges_count + (b2.non_pointe_count ?? 0)
+            const totalA = a.absences_count + a.retards_count + a.conges_count
+            const totalB = b2.absences_count + b2.retards_count + b2.conges_count
             return totalB - totalA
           })
 
@@ -426,20 +461,16 @@ const CrmRecap: React.FC = () => {
       .filter((b) => b.rows.length > 0)
   }, [bureauxData, selectedBureau, search])
 
+  const openedBureauId = openedRowKey ? Number(openedRowKey.split('-')[0]) : null
   const detailCounters = useMemo(() => {
     const base = { present: 0, absent: 0, conge: 0, retard: 0, non_pointe: 0 }
     const detail = openedRowKey ? agentDetails[openedRowKey] : null
     if (!detail?.days) return base
-    return detail.days.reduce((acc, day) => {
-      const key = normalizeStatus(day.status)
-      if (key === 'present') acc.present += 1
-      if (key === 'absent') acc.absent += 1
-      if (key === 'conge') acc.conge += 1
-      if (day.is_retard) acc.retard += 1
-      if (!day.checkin_time && key !== 'absent' && key !== 'conge') acc.non_pointe += 1
-      return acc
-    }, base)
-  }, [agentDetails, openedRowKey])
+    const bureau = bureauxData.find((b) => b.bureau_id === openedBureauId)
+    const apiThreshold = bureau?.schedule_start?.substring(0, 5) ?? detail.schedule_start
+    const threshold = (openedBureauId != null ? bureauThresholds[openedBureauId] : undefined) ?? apiThreshold
+    return countClassifiedDays(detail.days, threshold)
+  }, [agentDetails, openedRowKey, openedBureauId, bureauxData, bureauThresholds])
 
   return (
     <div className="presence-page">
@@ -608,7 +639,7 @@ const CrmRecap: React.FC = () => {
                                     <button
                                       type="button"
                                       className="crm-row-trigger"
-                                      onClick={() => toggleDetail(rowKey)}
+                                      onClick={() => toggleDetail(rowKey, row.user_id, row.month)}
                                     >
                                       {row.username}
                                     </button>
@@ -617,7 +648,7 @@ const CrmRecap: React.FC = () => {
                                   <td>{row.absences_count}</td>
                                   <td>{row.retards_count}</td>
                                   <td>{row.conges_count}</td>
-                                  <td>{row.non_pointe_count ?? nonPointeCache[rowKey] ?? '—'}</td>
+                                  <td>{row.non_pointe_count ?? nonPointeCache[rowKey] ?? ''}</td>
                                   <td><strong>{total}</strong></td>
                                 </tr>
                                 {isOpen && (
@@ -659,34 +690,33 @@ const CrmRecap: React.FC = () => {
                                                   </tr>
                                                 </thead>
                                                 <tbody>
-                                                  {agentDetails[rowKey].days.map((d) => (
+                                                  {agentDetails[rowKey].days.map((d) => {
+                                                    const classified = classifyDay(d, effectiveThreshold)
+                                                    return (
                                                     <tr key={`${d.date}-${d.checkin_time ?? 'no-checkin'}`}>
                                                       <td>{formatDayLabel(d.date, locale)}</td>
                                                       <td>
-                                                        <span className={`daily-status-label ${statusClass(d.status)}`}>
-                                                          {statusLabel(d.status)}
+                                                        <span className={`daily-status-label ${statusClass(classified.kind)}`}>
+                                                          {statusLabel(classified.kind)}
                                                         </span>
                                                       </td>
-                                                      <td>{formatCheckinHHMM(d) ?? '—'}</td>
+                                                      <td>{classified.checkin ?? '—'}</td>
                                                       <td>
-                                                        {isRetardDay(d, effectiveThreshold) ? (
+                                                        {classified.isRetard ? (
                                                           <span className="crm-retard-badge crm-retard-badge--yes">{lang === 'en' ? 'Yes' : 'Oui'}</span>
                                                         ) : (
                                                           <span className="crm-retard-badge crm-retard-badge--no">{lang === 'en' ? 'No' : 'Non'}</span>
                                                         )}
                                                       </td>
                                                       <td>
-                                                        {(() => {
-                                                          const key = normalizeStatus(d.status)
-                                                          const isNP = !resolveCheckinTime(d) && key !== 'absent' && key !== 'conge'
-                                                          return isNP
-                                                            ? <span className="crm-retard-badge crm-retard-badge--yes">{lang === 'en' ? 'Yes' : 'Oui'}</span>
-                                                            : <span className="crm-retard-badge crm-retard-badge--no">{lang === 'en' ? 'No' : 'Non'}</span>
-                                                        })()}
+                                                        {classified.isNonPointe
+                                                          ? <span className="crm-retard-badge crm-retard-badge--yes">{lang === 'en' ? 'Yes' : 'Oui'}</span>
+                                                          : <span className="crm-retard-badge crm-retard-badge--no">{lang === 'en' ? 'No' : 'Non'}</span>}
                                                       </td>
                                                       <td>{d.note ?? '—'}</td>
                                                     </tr>
-                                                  ))}
+                                                    )
+                                                  })}
                                                 </tbody>
                                               </table>
                                             </div>

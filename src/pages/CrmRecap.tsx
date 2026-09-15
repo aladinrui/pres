@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logout } from '../features/auth/authSlice'
 import { buildBureauNameMap } from '../utils/bureaux'
-import { toBusinessISODate, formatIsoTimeInBusinessTZ, convertUtcHHMMToBusinessHHMM, parseToCairoHHMM } from '../utils/businessTime'
+import { toBusinessISODate, toBusinessYearMonth, formatIsoTimeInBusinessTZ, convertUtcHHMMToBusinessHHMM, parseToCairoHHMM } from '../utils/businessTime'
 import { useLang, getLocale } from '../utils/i18n'
 
 const API = ((import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:4000') + '/api'
@@ -302,10 +302,11 @@ const CrmRecap: React.FC = () => {
   }, [managedBureauIds, myBureauId])
 
   const today = toBusinessISODate()
+  const firstOfMonth = `${toBusinessYearMonth()}-01`
   const [dateTo, setDateTo] = useState<string>(today)
-  const [dateFrom, setDateFrom] = useState<string>('2026-06-01')
+  const [dateFrom, setDateFrom] = useState<string>(firstOfMonth)
   // États brouillon pour les inputs : ne déclenchent pas l'API avant validation
-  const [inputFrom, setInputFrom] = useState<string>('2026-06-01')
+  const [inputFrom, setInputFrom] = useState<string>(firstOfMonth)
   const [inputTo, setInputTo] = useState<string>(today)
 
   const [bureauxData, setBureauxData] = useState<BureauRecapView[]>([])

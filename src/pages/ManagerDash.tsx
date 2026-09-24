@@ -117,8 +117,8 @@ function hhmmToMinutes(hhmm: string): number {
 }
 
 function defaultThresholdForBureau(id: number): string {
-  // MRO / MRO2 : 09:05 — JC : 10:00 — autres : 10:30
-  if (id === 5 || id === 12) return '09:05'
+  // MRO / MRO2 : 10:05 — JC : 10:00 — autres : 10:30
+  if (id === 5 || id === 12) return '10:05'
   if (id === 8) return '10:00'
   return '10:30'
 }

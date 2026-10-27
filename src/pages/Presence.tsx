@@ -4,10 +4,7 @@ import { Link } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logout } from '../features/auth/authSlice'
 import {
-  BUSINESS_TIME_ZONE,
   formatLocalTime,
-  getBusinessNowDate,
-  toBusinessYearMonth,
 } from '../utils/businessTime'
 import { useLang, getJours, getJoursCourt, getMois } from '../utils/i18n'
 
@@ -94,7 +91,8 @@ const Presence: React.FC = () => {
   const JOURS_COURT = getJoursCourt(lang)
   const MOIS = getMois(lang)
 
-  const [now, setNow] = useState(getBusinessNowDate())
+  // Heure du poste = heure locale du bureau (l'agent pointe depuis son bureau)
+  const [now, setNow] = useState(new Date())
   const [todayData, setTodayData] = useState<TodayData | null>(null)
   const [weekData, setWeekData] = useState<WeekData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -111,7 +109,7 @@ const Presence: React.FC = () => {
 
   // Horloge temps réel
   useEffect(() => {
-    const timer = setInterval(() => setNow(getBusinessNowDate()), 1000)
+    const timer = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(timer)
   }, [])
 
@@ -177,7 +175,7 @@ const Presence: React.FC = () => {
     const [y, m] = monthYM.split('-').map(Number)
     const d = new Date(y, m - 1 + n, 1)
     const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    const currentYM = toBusinessYearMonth()
+    const currentYM = toYearMonthLocal(new Date())
     if (next > currentYM) return
     setMonthYM(next)
     setExpandedDay(null)
@@ -480,7 +478,7 @@ const Presence: React.FC = () => {
                 <button
                   className="date-nav-btn"
                   onClick={() => goMonth(1)}
-                  disabled={monthYM >= toBusinessYearMonth()}
+                  disabled={monthYM >= toYearMonthLocal(new Date())}
                 >&#8250;</button>
               </div>
 

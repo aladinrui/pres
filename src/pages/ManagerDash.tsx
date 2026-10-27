@@ -6,6 +6,7 @@ import { logout } from '../features/auth/authSlice'
 import { buildBureauNameMap } from '../utils/bureaux'
 import {
   formatLocalTime,
+  toApiLocalHHMM,
   toBusinessISODate,
 } from '../utils/businessTime'
 import { useLang, getMois, getJoursCourt } from '../utils/i18n'
@@ -320,7 +321,7 @@ const ManagerDash: React.FC = () => {
     try {
       await axios.post(`${API}/presence/update_hours`, {
         user_id: userId,
-        NewHours: `${selectedDate} ${hoursDraft}`,
+        NewHours: `${selectedDate} ${toApiLocalHHMM(selectedDate, hoursDraft)}`,
         ref_date: selectedDate,
       })
       setEditingHoursUserId(null)

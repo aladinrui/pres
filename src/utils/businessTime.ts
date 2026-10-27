@@ -82,11 +82,37 @@ export function convertUtcHHMMToBusinessHHMM(hhmm: string): string {
  */
 export function formatLocalTime(value: string, withSeconds = false): string {
   const trimmed = value.trim()
-  const time = /^\d{4}-\d{2}-\d{2}[T ]/.test(trimmed) ? trimmed.slice(11) : trimmed
+  const isFull = /^\d{4}-\d{2}-\d{2}[T ]/.test(trimmed)
+  const time = isFull ? trimmed.slice(11) : trimmed
   const [h = '0', m = '0', s = '0'] = time.split(':')
   const hhmm = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`
-  if (withSeconds) return `${hhmm}:${s.slice(0, 2).padStart(2, '0')}`
-  return hhmm
+  const out = withSeconds ? `${hhmm}:${s.slice(0, 2).padStart(2, '0')}` : hhmm
+  // "HH:MM:SS" seul (checkin_time des alertes) = pointage du jour
+  const date = isFull ? trimmed.slice(0, 10) : todayLocalISO()
+  return isDstPatchDate(date) ? shiftHHMM(out, -DST_PATCH_HOURS) : out
+}
+
+// ── PATCH TEMPORAIRE heure d'été Égypte ────────────────────────────────────
+// Le back calcule l'heure locale du bureau avec +1h de trop pendant l'heure
+// d'été du Caire (24/04 → 29/10/2026). On retire 1h à l'affichage et on la
+// rajoute avant d'envoyer NewHours à update_hours.
+// À supprimer une fois le back corrigé.
+const DST_PATCH_FROM = '2026-04-24'
+const DST_PATCH_TO = '2026-10-29'
+const DST_PATCH_HOURS = 1
+
+function todayLocalISO(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function isDstPatchDate(isoDate: string): boolean {
+  return isoDate >= DST_PATCH_FROM && isoDate <= DST_PATCH_TO
+}
+
+/** "HH:MM" saisi par l'utilisateur → valeur attendue par update_hours */
+export function toApiLocalHHMM(isoDate: string, hhmm: string): string {
+  return isDstPatchDate(isoDate) ? shiftHHMM(hhmm, DST_PATCH_HOURS) : hhmm
 }
 
 /** Returns Cairo time in total minutes for a full backend timestamp */

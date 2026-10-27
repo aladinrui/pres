@@ -5,7 +5,7 @@ import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logout } from '../features/auth/authSlice'
 import { buildBureauNameMap } from '../utils/bureaux'
 import {
-  formatTimeForBureau,
+  formatLocalTime,
   toBusinessISODate,
 } from '../utils/businessTime'
 import { useLang, getMois, getJoursCourt } from '../utils/i18n'
@@ -83,8 +83,9 @@ function formatDateFR(iso: string, jours: string[], mois: string[]): string {
   return `${jours[d.getDay()]} ${d.getDate()} ${mois[d.getMonth()]} ${d.getFullYear()}`
 }
 
-function formatTime(iso: string, bId: number): string {
-  return formatTimeForBureau(iso, bId)
+/** Timestamp de log déjà à l'heure locale du bureau */
+function formatTime(iso: string, _bId: number): string {
+  return formatLocalTime(iso)
 }
 
 /** Retourne le décalage entre une heure "HH:MM" et le seuil "HH:MM", ex: "+45min" ou "+1h15" */

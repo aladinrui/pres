@@ -12,11 +12,10 @@ import {
   type UserDay,
 } from '../features/presence/presenceSlice'
 import {
-  convertUtcHHMMToBusinessHHMM,
+  formatLocalTime,
   formatTimeForBureau,
   parseToBureauHHMM,
   toBusinessISODate,
-  parseToCairoHHMM,
 } from '../utils/businessTime'
 import { useLang, getMois, getJoursCourt } from '../utils/i18n'
 
@@ -54,20 +53,26 @@ function formatDateFR(iso: string, jours: string[], mois: string[]) {
   return `${jours[d.getDay()]} ${d.getDate()} ${mois[d.getMonth()]} ${d.getFullYear()}`
 }
 
-function formatTime(iso: string, bId = 0) {
+/** Timestamp de log / checkin_time : déjà à l'heure locale du bureau */
+function formatTime(iso: string, _bId = 0) {
+  return formatLocalTime(iso)
+}
+
+/** Champs encore en UTC (updated_at) → heure du bureau */
+function formatUtcTime(iso: string, bId = 0) {
   return formatTimeForBureau(iso, bId)
 }
 
-/** Formate n'importe quelle valeur heure backend en "HH:MM" selon le bureau */
-function formatHHMM(t: string | null | undefined, bId = 0): string | null {
+/** checkin_time des alertes ("HH:MM:SS", heure locale du bureau) → "HH:MM" */
+function formatHHMM(t: string | null | undefined, _bId = 0): string | null {
   if (!t) return null
-  return parseToBureauHHMM(t, bId)
+  return formatLocalTime(t)
 }
 
-/** Compare une valeur heure backend au seuil "HH:MM" — tout en Cairo */
+/** Compare une valeur heure backend au seuil "HH:MM" — en heure locale du bureau */
 function isCheckinLate(checkinTime: string | null | undefined, threshold: string): boolean {
   if (!checkinTime) return false
-  const hhmm = parseToCairoHHMM(checkinTime)
+  const hhmm = formatLocalTime(checkinTime)
   const [ch, cm] = hhmm.split(':').map(Number)
   const [th, tm] = threshold.split(':').map(Number)
   return ch * 60 + cm > th * 60 + tm
@@ -79,11 +84,11 @@ function firstCheckin(user: UserDay): string | null {
   return ins.length > 0 ? ins[0].timestamp : null
 }
 
-/** true si l'heure de premier IN dépasse le seuil hh:mm (comparaison en heure Cairo) */
+/** true si l'heure de premier IN dépasse le seuil hh:mm (heure locale du bureau) */
 function isLateByTime(user: UserDay, threshold: string): boolean {
   const ci = firstCheckin(user)
   if (!ci) return false
-  const hhmm = parseToCairoHHMM(ci)
+  const hhmm = formatLocalTime(ci)
   const [ch, cm] = hhmm.split(':').map(Number)
   const [th, tm] = threshold.split(':').map(Number)
   return ch * 60 + cm > th * 60 + tm
@@ -569,9 +574,9 @@ const PresenceOverview: React.FC = () => {
                                   const checkinDisplay = alertData?.checkin_time
                                     ? formatHHMM(alertData.checkin_time, bureau_id)
                                     : ci ? formatTime(ci, bureau_id)
-                                    : alertData?.updated_at ? formatTime(alertData.updated_at, bureau_id)
+                                    : alertData?.updated_at ? formatUtcTime(alertData.updated_at, bureau_id)
                                     : null
-                                  const scheduleDisplay = formatHHMM(alertData?.schedule_start, bureau_id)
+                                  const scheduleDisplay = alertData?.schedule_start ? parseToBureauHHMM(alertData.schedule_start, bureau_id) : null
                                   // Forcer present-late au render si présent et checkin tardif
                                   const effectiveStatus = (agStatus === 'present' && (
                                     alertData?.checkin_time ? isCheckinLate(alertData.checkin_time, threshold)
@@ -709,7 +714,7 @@ const PresenceOverview: React.FC = () => {
                                 </div>
                                 <div><span className="alerts-status-badge" style={{ background: sm.color + '22', color: sm.color, borderColor: sm.color + '55' }}>{sm.label}</span></div>
                                 <div>{agent.note ? <span className="alerts-note-text">{agent.note}</span> : <span className="note-preview-empty">—</span>}</div>
-                                <div>{agent.updated_at ? <span className="alerts-time">{formatTime(agent.updated_at, bureau_id)}</span> : <span className="note-preview-empty">—</span>}</div>
+                                <div>{agent.updated_at ? <span className="alerts-time">{formatUtcTime(agent.updated_at, bureau_id)}</span> : <span className="note-preview-empty">—</span>}</div>
                               </div>
                             )
                           })}

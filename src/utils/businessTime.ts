@@ -75,6 +75,20 @@ export function convertUtcHHMMToBusinessHHMM(hhmm: string): string {
   return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`
 }
 
+/**
+ * Heure locale du bureau telle que renvoyée par l'API /presence
+ * ("2026-10-26T11:48:01.840" ou "HH:MM:SS") → "HH:MM" (ou "HH:MM:SS").
+ * Aucune conversion de fuseau : la chaîne est déjà à l'heure du bureau.
+ */
+export function formatLocalTime(value: string, withSeconds = false): string {
+  const trimmed = value.trim()
+  const time = /^\d{4}-\d{2}-\d{2}[T ]/.test(trimmed) ? trimmed.slice(11) : trimmed
+  const [h = '0', m = '0', s = '0'] = time.split(':')
+  const hhmm = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`
+  if (withSeconds) return `${hhmm}:${s.slice(0, 2).padStart(2, '0')}`
+  return hhmm
+}
+
 /** Returns Cairo time in total minutes for a full backend timestamp */
 export function parseBackendTimestampToCairoMinutes(value: string): number | null {
   const trimmed = value.trim()

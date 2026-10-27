@@ -5,7 +5,7 @@ import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logout } from '../features/auth/authSlice'
 import {
   BUSINESS_TIME_ZONE,
-  formatIsoTimeInBusinessTZ,
+  formatLocalTime,
   getBusinessNowDate,
   toBusinessYearMonth,
 } from '../utils/businessTime'
@@ -20,7 +20,8 @@ type PresenceLog = {
   bureau_id: number
   profil: string
   type: 'in' | 'out'
-  timestamp: string  // Always UTC (backend must ensure this)
+  timestamp: string  // Heure locale du bureau, sans fuseau — à afficher telle quelle
+  timestamp_utc?: string
   ip_address: string | null
   note: string | null
   created_at: string
@@ -78,7 +79,7 @@ type MonthData = {
 }
 
 const formatTime = (isoString: string): string => {
-  return formatIsoTimeInBusinessTZ(isoString, true)
+  return formatLocalTime(isoString, true)
 }
 
 const formatFullDate = (now: Date, jours: string[], mois: string[]): string => {

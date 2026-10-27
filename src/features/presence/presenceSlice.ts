@@ -10,7 +10,8 @@ const API = ((import.meta.env.VITE_API_URL as string | undefined) || 'http://loc
 export type PresenceLog = {
   id: number
   type: 'in' | 'out'
-  timestamp: string
+  timestamp: string       // heure locale du bureau, sans fuseau
+  timestamp_utc?: string  // UTC sans "Z" — parser avec new Date(timestamp_utc + 'Z')
   note: string | null
   ip_address: string | null
 }
